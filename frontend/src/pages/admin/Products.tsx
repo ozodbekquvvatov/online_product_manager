@@ -824,7 +824,7 @@ export const Products: React.FC = () => {
               onChange={() => setViewMode('table')}
             />
             <label className="btn btn-outline-primary" htmlFor="tableView">
-              <Table size={12} />
+              <Table size="12" />
             </label>
           </div>
           
