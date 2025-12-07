@@ -17,6 +17,8 @@ interface ProductImage {
 
 interface ProductWithImages extends Product {
   images: ProductImage[];
+  cost_price_usd?: number;  // Added: USD price from backend
+  selling_price_usd?: number; // Added: USD price from backend
 }
 
 interface PaginationInfo {
@@ -50,7 +52,7 @@ export const Products: React.FC = () => {
     selling_price: '',
     stock_quantity: '',
     reorder_level: '',
-    unit_of_measure: 'dona',
+    unit_of_measure: 'unit',
     description: ''
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -68,6 +70,26 @@ export const Products: React.FC = () => {
 
   const API_BASE_URL = 'http://127.0.0.1:8000';
 
+  // Get price for display - use USD value if available
+  const getDisplayPrice = (product: ProductWithImages, type: 'cost' | 'selling'): string => {
+    if (type === 'cost' && product.cost_price_usd !== undefined) {
+      return calculations.formatCurrency(product.cost_price_usd);
+    }
+    if (type === 'selling' && product.selling_price_usd !== undefined) {
+      return calculations.formatCurrency(product.selling_price_usd);
+    }
+    // Fallback to original price (divided by exchange rate as safety)
+    const price = type === 'cost' ? Number(product.cost_price) : Number(product.selling_price);
+    const usdPrice = price / 12500; // Convert UZS to USD
+    return calculations.formatCurrency(usdPrice);
+  };
+
+  // Get inventory value in USD
+  const getInventoryValueUSD = (product: ProductWithImages): number => {
+    const costPriceUSD = product.cost_price_usd || (Number(product.cost_price) / 12500);
+    return costPriceUSD * Number(product.stock_quantity);
+  };
+
   const fetchProducts = async (page: number = 1) => {
     try {
       setLoading(true);
@@ -81,10 +103,13 @@ export const Products: React.FC = () => {
       });
 
       if (!response.ok) {
-        throw new Error('Mahsulotlarni olishda xatolik');
+        throw new Error('Error fetching products');
       }
 
       const result = await response.json();
+      
+      // Debug: Check what backend returns
+      
       
       if (result.success) {
         let productsData = [];
@@ -186,10 +211,10 @@ export const Products: React.FC = () => {
         }
         
       } else {
-        throw new Error(result.message || 'Mahsulotlarni olishda xatolik');
+        throw new Error(result.message || 'Error fetching products');
       }
     } catch (error) {
-      setError('Mahsulotlarni yuklashda xatolik');
+      setError('Error loading products');
       setProducts([]);
       setFilteredProducts([]);
     } finally {
@@ -209,8 +234,8 @@ export const Products: React.FC = () => {
       product.name.toLowerCase().includes(term.toLowerCase()) ||
       product.description?.toLowerCase().includes(term.toLowerCase()) ||
       product.unit_of_measure.toLowerCase().includes(term.toLowerCase()) ||
-      product.cost_price.toString().includes(term) ||
-      product.selling_price.toString().includes(term) ||
+      (product.cost_price_usd?.toString() || (Number(product.cost_price) / 12500).toString()).includes(term) ||
+      (product.selling_price_usd?.toString() || (Number(product.selling_price) / 12500).toString()).includes(term) ||
       product.stock_quantity.toString().includes(term)
     );
     
@@ -297,7 +322,7 @@ export const Products: React.FC = () => {
       }
 
       if (!result.success) {
-        throw new Error(result.message || 'Rasmlarni yuklashda xatolik');
+        throw new Error(result.message || 'Error uploading images');
       }
 
       return result.data;
@@ -311,12 +336,12 @@ export const Products: React.FC = () => {
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
 
-    if (!formData.name.trim()) newErrors.name = 'Mahsulot nomi majburiy';
-    if (!formData.cost_price || Number(formData.cost_price) <= 0) newErrors.cost_price = 'Narx noto\'g\'ri';
-    if (!formData.selling_price || Number(formData.selling_price) <= 0) newErrors.selling_price = 'Sotish narxi noto\'g\'ri';
-    if (Number(formData.selling_price) <= Number(formData.cost_price)) newErrors.selling_price = 'Sotish narxi tannarxdan katta bo\'lishi kerak';
-    if (!formData.stock_quantity || Number(formData.stock_quantity) < 0) newErrors.stock_quantity = 'Qoldiq soni noto\'g\'ri';
-    if (!formData.reorder_level || Number(formData.reorder_level) < 0) newErrors.reorder_level = 'Qayta buyurtma darajasi noto\'g\'ri';
+    if (!formData.name.trim()) newErrors.name = 'Product name is required';
+    if (!formData.cost_price || Number(formData.cost_price) <= 0) newErrors.cost_price = 'Invalid cost price';
+    if (!formData.selling_price || Number(formData.selling_price) <= 0) newErrors.selling_price = 'Invalid selling price';
+    if (Number(formData.selling_price) <= Number(formData.cost_price)) newErrors.selling_price = 'Selling price must be greater than cost price';
+    if (!formData.stock_quantity || Number(formData.stock_quantity) < 0) newErrors.stock_quantity = 'Invalid stock quantity';
+    if (!formData.reorder_level || Number(formData.reorder_level) < 0) newErrors.reorder_level = 'Invalid reorder level';
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -331,6 +356,7 @@ export const Products: React.FC = () => {
     setError('');
 
     try {
+      // Frontend sends USD prices, backend will convert to UZS
       const response = await fetch(`${API_BASE_URL}/api/admin/products`, {
         method: 'POST',
         headers: {
@@ -340,8 +366,8 @@ export const Products: React.FC = () => {
         credentials: 'include',
         body: JSON.stringify({
           name: formData.name,
-          cost_price: Number(formData.cost_price),
-          selling_price: Number(formData.selling_price),
+          cost_price: Number(formData.cost_price), // USD price
+          selling_price: Number(formData.selling_price), // USD price
           stock_quantity: Number(formData.stock_quantity),
           reorder_level: Number(formData.reorder_level),
           unit_of_measure: formData.unit_of_measure,
@@ -359,7 +385,7 @@ export const Products: React.FC = () => {
           });
           setErrors(backendErrors);
         }
-        throw new Error(result.message || 'Mahsulot yaratishda xatolik');
+        throw new Error(result.message || 'Error creating product');
       }
 
       if (result.success) {
@@ -370,12 +396,12 @@ export const Products: React.FC = () => {
         fetchProducts(pagination.current_page);
         
         handleCloseModal();
-        setSuccess('Mahsulot muvaffaqiyatli yaratildi');
+        setSuccess('Product created successfully');
       } else {
-        throw new Error(result.message || 'Mahsulot yaratishda xatolik');
+        throw new Error(result.message || 'Error creating product');
       }
     } catch (error: any) {
-      setError(error.message || 'Mahsulot yaratishda xatolik');
+      setError(error.message || 'Error creating product');
     } finally {
       setSubmitLoading(false);
     }
@@ -383,10 +409,14 @@ export const Products: React.FC = () => {
 
   const handleEdit = (product: ProductWithImages) => {
     setSelectedProduct(product);
+    // Use USD prices for form
+    const costPriceUSD = product.cost_price_usd || (Number(product.cost_price) / 12500);
+    const sellingPriceUSD = product.selling_price_usd || (Number(product.selling_price) / 12500);
+    
     setFormData({
       name: product.name,
-      cost_price: product.cost_price.toString(),
-      selling_price: product.selling_price.toString(),
+      cost_price: costPriceUSD.toString(),
+      selling_price: sellingPriceUSD.toString(),
       stock_quantity: product.stock_quantity.toString(),
       reorder_level: product.reorder_level.toString(),
       unit_of_measure: product.unit_of_measure,
@@ -404,6 +434,7 @@ export const Products: React.FC = () => {
     setError('');
 
     try {
+      // Frontend sends USD prices, backend will convert to UZS
       const response = await fetch(`${API_BASE_URL}/api/admin/products/${selectedProduct.id}`, {
         method: 'PUT',
         headers: {
@@ -413,8 +444,8 @@ export const Products: React.FC = () => {
         credentials: 'include',
         body: JSON.stringify({
           name: formData.name,
-          cost_price: Number(formData.cost_price),
-          selling_price: Number(formData.selling_price),
+          cost_price: Number(formData.cost_price), // USD price
+          selling_price: Number(formData.selling_price), // USD price
           stock_quantity: Number(formData.stock_quantity),
           reorder_level: Number(formData.reorder_level),
           unit_of_measure: formData.unit_of_measure,
@@ -432,7 +463,7 @@ export const Products: React.FC = () => {
           });
           setErrors(backendErrors);
         }
-        throw new Error(result.message || 'Mahsulotni yangilashda xatolik');
+        throw new Error(result.message || 'Error updating product');
       }
 
       if (result.success) {
@@ -442,16 +473,18 @@ export const Products: React.FC = () => {
 
         fetchProducts(pagination.current_page);
         handleCloseEditModal();
-        setSuccess('Mahsulot muvaffaqiyatli yangilandi');
+        setSuccess('Product updated successfully');
       } else {
-        throw new Error(result.message || 'Mahsulotni yangilashda xatolik');
+        throw new Error(result.message || 'Error updating product');
       }
     } catch (error: any) {
-      setError(error.message || 'Mahsulotni yangilashda xatolik');
+      setError(error.message || 'Error updating product');
     } finally {
       setSubmitLoading(false);
     }
   };
+
+  // ... (rest of your component remains the same, but update display functions)
 
   const handleDeleteImage = async (imageId: number) => {
     if (!selectedProduct) return;
@@ -468,7 +501,7 @@ export const Products: React.FC = () => {
       const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(result.message || 'Rasmni o\'chirishda xatolik');
+        throw new Error(result.message || 'Error deleting image');
       }
 
       if (result.success) {
@@ -488,12 +521,12 @@ export const Products: React.FC = () => {
             : p
         ));
         
-        setSuccess('Rasm muvaffaqiyatli o\'chirildi');
+        setSuccess('Image deleted successfully');
       } else {
-        throw new Error(result.message || 'Rasmni o\'chirishda xatolik');
+        throw new Error(result.message || 'Error deleting image');
       }
     } catch (error: any) {
-      setError(error.message || 'Rasmni o\'chirishda xatolik');
+      setError(error.message || 'Error deleting image');
     }
   };
 
@@ -512,7 +545,7 @@ export const Products: React.FC = () => {
       const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(result.message || 'Asosiy rasmni o\'rnatishda xatolik');
+        throw new Error(result.message || 'Error setting primary image');
       }
 
       if (result.success) {
@@ -533,12 +566,12 @@ export const Products: React.FC = () => {
             : p
         ));
         
-        setSuccess('Asosiy rasm muvaffaqiyatli o\'rnatildi');
+        setSuccess('Primary image set successfully');
       } else {
-        throw new Error(result.message || 'Asosiy rasmni o\'rnatishda xatolik');
+        throw new Error(result.message || 'Error setting primary image');
       }
     } catch (error: any) {
-      setError(error.message || 'Asosiy rasmni o\'rnatishda xatolik');
+      setError(error.message || 'Error setting primary image');
     }
   };
 
@@ -571,19 +604,19 @@ export const Products: React.FC = () => {
       const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(result.message || 'Mahsulotni o\'chirishda xatolik');
+        throw new Error(result.message || 'Error deleting product');
       }
 
       if (result.success) {
         fetchProducts(pagination.current_page);
         setShowDeleteModal(false);
         setSelectedProduct(null);
-        setSuccess('Mahsulot muvaffaqiyatli o\'chirildi');
+        setSuccess('Product deleted successfully');
       } else {
-        throw new Error(result.message || 'Mahsulotni o\'chirishda xatolik');
+        throw new Error(result.message || 'Error deleting product');
       }
     } catch (error: any) {
-      setError(error.message || 'Mahsulotni o\'chirishda xatolik');
+      setError(error.message || 'Error deleting product');
     } finally {
       setSubmitLoading(false);
     }
@@ -601,7 +634,7 @@ export const Products: React.FC = () => {
       selling_price: '',
       stock_quantity: '',
       reorder_level: '',
-      unit_of_measure: 'dona',
+      unit_of_measure: 'unit',
       description: ''
     });
   };
@@ -619,7 +652,7 @@ export const Products: React.FC = () => {
       selling_price: '',
       stock_quantity: '',
       reorder_level: '',
-      unit_of_measure: 'dona',
+      unit_of_measure: 'unit',
       description: ''
     });
   };
@@ -726,11 +759,11 @@ export const Products: React.FC = () => {
       <Card.Footer className="bg-white py-2">
         <div className="d-flex justify-content-between align-items-center">
           <small className="text-muted">
-            Sahifa {pagination.current_page} / {pagination.last_page} 
-            {pagination.total > 0 && ` (Jami: ${pagination.total} mahsulot)`}
+            Page {pagination.current_page} / {pagination.last_page} 
+            {pagination.total > 0 && ` (Total: ${pagination.total} products)`}
             {pagination.from > 0 && pagination.to > 0 && (
               <span className="ms-2">
-                ({pagination.from}-{pagination.to} ko'rsatilmoqda)
+                (Showing {pagination.from}-{pagination.to})
               </span>
             )}
           </small>
@@ -743,24 +776,20 @@ export const Products: React.FC = () => {
   };
 
   const totalInventoryValue = filteredProducts.reduce(
-    (sum, p) => sum + Number(p.stock_quantity) * Number(p.cost_price),
+    (sum, p) => sum + getInventoryValueUSD(p),
     0
   );
   const lowStockCount = filteredProducts.filter(p => Number(p.stock_quantity) <= Number(p.reorder_level)).length;
   const activeProductsCount = filteredProducts.filter(p => p.is_active).length;
-
-  const formatInventoryValue = (value: number) => {
-    return calculations.formatCurrency(value).replace('$', '') + ' so\'m';
-  };
 
   if (loading) {
     return (
       <Container fluid className="px-2">
         <div className="text-center py-5">
           <div className="spinner-border text-primary" role="status">
-            <span className="visually-hidden">Yuklanmoqda...</span>
+            <span className="visually-hidden">Loading...</span>
           </div>
-          <p className="mt-2 text-muted small">Mahsulotlar yuklanmoqda...</p>
+          <p className="mt-2 text-muted small">Loading products...</p>
         </div>
       </Container>
     );
@@ -770,8 +799,8 @@ export const Products: React.FC = () => {
     <Container fluid className="fade-in px-2">
       <div className="d-flex justify-content-between align-items-center mb-3">
         <div>
-          <h4 className="fw-bold mb-1">Mahsulotlar</h4>
-          <p className="text-muted small mb-0">Mahsulotlaringiz katalogi</p>
+          <h4 className="fw-bold mb-1">Products</h4>
+          <p className="text-muted small mb-0">Your product catalog</p>
         </div>
         <div className="d-flex gap-1">
           <div className="d-none d-md-block btn-group btn-group-sm" role="group">
@@ -801,7 +830,7 @@ export const Products: React.FC = () => {
           
           <Button variant="primary" size="sm" onClick={() => setShowModal(true)}>
             <Plus size={14} className="me-1" />
-            <span className="d-none d-sm-inline">Qo'shish</span>
+            <span className="d-none d-sm-inline">Add</span>
           </Button>
         </div>
       </div>
@@ -826,7 +855,7 @@ export const Products: React.FC = () => {
                   <Search size={14} />
                 </InputGroup.Text>
                 <Form.Control
-                  placeholder="Mahsulotlarni qidirish..."
+                  placeholder="Search products..."
                   value={searchTerm}
                   onChange={(e) => handleSearch(e.target.value)}
                 />
@@ -834,29 +863,29 @@ export const Products: React.FC = () => {
                   <Button 
                     variant="outline-secondary" 
                     onClick={handleClearSearch}
-                    title="Tozalash"
+                    title="Clear"
                   >
                     <X size={14} />
                   </Button>
                 )}
               </InputGroup>
               <Form.Text className="text-muted small">
-                Nomi, tavsifi, narxi yoki miqdoriga qarab qidirish
+                Search by name, description, price or quantity
               </Form.Text>
             </Col>
             <Col md={6} className="text-md-end">
               <small className="text-muted">
                 {searchTerm ? (
                   <>
-                    <strong>{filteredProducts.length}</strong> ta mahsulot topildi
+                    <strong>{filteredProducts.length}</strong> products found
                     {filteredProducts.length !== products.length && (
                       <span className="ms-2">
-                        (Jami: {products.length})
+                        (Total: {products.length})
                       </span>
                     )}
                   </>
                 ) : (
-                  <>{products.length} ta mahsulot</>
+                  <>{products.length} products</>
                 )}
               </small>
             </Col>
@@ -874,7 +903,7 @@ export const Products: React.FC = () => {
                 </div>
                 <div>
                   <h6 className="fw-bold mb-0 small">{searchTerm ? filteredProducts.length : pagination.total}</h6>
-                  <small className="text-muted">{searchTerm ? 'Topildi' : 'Jami'}</small>
+                  <small className="text-muted">{searchTerm ? 'Found' : 'Total'}</small>
                 </div>
               </div>
             </Card.Body>
@@ -888,8 +917,8 @@ export const Products: React.FC = () => {
                   <Package size={14} className="text-success" />
                 </div>
                 <div>
-                  <h6 className="fw-bold mb-0 small">{formatInventoryValue(totalInventoryValue)}</h6>
-                  <small className="text-muted">Inventar</small>
+                  <h6 className="fw-bold mb-0 small">{calculations.formatCurrency(totalInventoryValue)}</h6>
+                  <small className="text-muted">Inventory Value</small>
                 </div>
               </div>
             </Card.Body>
@@ -904,7 +933,7 @@ export const Products: React.FC = () => {
                 </div>
                 <div>
                   <h6 className="fw-bold mb-0 small">{lowStockCount}</h6>
-                  <small className="text-muted">Kam Qolgan</small>
+                  <small className="text-muted">Low Stock</small>
                 </div>
               </div>
             </Card.Body>
@@ -919,7 +948,7 @@ export const Products: React.FC = () => {
                 </div>
                 <div>
                   <h6 className="fw-bold mb-0 small">{activeProductsCount}</h6>
-                  <small className="text-muted">Faol</small>
+                  <small className="text-muted">Active</small>
                 </div>
               </div>
             </Card.Body>
@@ -931,16 +960,16 @@ export const Products: React.FC = () => {
         <Card.Header className="bg-white py-2">
           <div className="d-flex justify-content-between align-items-center">
             <h6 className="mb-0 fw-semibold small">
-              {searchTerm ? 'Qidiruv Natijalari' : 'Mahsulotlar'} ({searchTerm ? filteredProducts.length : pagination.total})
+              {searchTerm ? 'Search Results' : 'Products'} ({searchTerm ? filteredProducts.length : pagination.total})
               {!searchTerm && pagination.total > 0 && pagination.last_page > 1 && (
                 <span className="text-muted ms-2" style={{ fontSize: '0.7rem' }}>
-                  ({pagination.from}-{pagination.to} ko'rsatilmoqda)
+                  (Showing {pagination.from}-{pagination.to})
                 </span>
               )}
             </h6>
             <div className="d-none d-md-flex align-items-center gap-2">
               <small className="text-muted">
-                {viewMode === 'cards' ? 'Kartalar' : 'Jadval'} ko'rinishi
+                {viewMode === 'cards' ? 'Cards' : 'Table'} view
               </small>
             </div>
           </div>
@@ -950,16 +979,16 @@ export const Products: React.FC = () => {
             <div className="text-center py-3">
               <Package size={24} className="text-muted mb-1" />
               <p className="text-muted small mb-2">
-                {searchTerm ? 'Qidiruv bo\'yicha hech narsa topilmadi' : 'Mahsulotlar topilmadi'}
+                {searchTerm ? 'No results found for your search' : 'No products found'}
               </p>
               {searchTerm ? (
                 <Button variant="outline-primary" size="sm" onClick={handleClearSearch}>
-                  Qidiruvni tozalash
+                  Clear Search
                 </Button>
               ) : (
                 <Button variant="primary" size="sm" onClick={() => setShowModal(true)}>
                   <Plus size={12} className="me-1" />
-                  Mahsulot Qo'shish
+                  Add Product
                 </Button>
               )}
             </div>
@@ -996,16 +1025,16 @@ export const Products: React.FC = () => {
                             {product.name}
                           </h6>
                           <Badge bg={product.is_active ? 'success' : 'danger'} className="fs-8">
-                            {product.is_active ? 'Faol' : 'Nofaol'}
+                            {product.is_active ? 'Active' : 'Inactive'}
                           </Badge>
                         </div>
                         
                         <div className="d-flex gap-2 mb-1">
                           <small className="text-muted">
-                            T: {calculations.formatCurrency(Number(product.cost_price)).replace('$', '')} so'm
+                            C: {getDisplayPrice(product, 'cost')}
                           </small>
                           <small className="text-muted">
-                            S: {calculations.formatCurrency(Number(product.selling_price)).replace('$', '')} so'm
+                            S: {getDisplayPrice(product, 'selling')}
                           </small>
                         </div>
 
@@ -1021,7 +1050,7 @@ export const Products: React.FC = () => {
                               className="p-0"
                               style={{ width: '24px', height: '24px' }}
                               onClick={() => handleViewImages(product)}
-                              title="Rasmlar"
+                              title="Images"
                             >
                               <Camera size={10} />
                             </Button>
@@ -1031,7 +1060,7 @@ export const Products: React.FC = () => {
                               className="p-0"
                               style={{ width: '24px', height: '24px' }}
                               onClick={() => handleEdit(product)}
-                              title="Tahrirlash"
+                              title="Edit"
                             >
                               <Edit size={10} />
                             </Button>
@@ -1041,7 +1070,7 @@ export const Products: React.FC = () => {
                               className="p-0"
                               style={{ width: '24px', height: '24px' }}
                               onClick={() => handleDelete(product)}
-                              title="O'chirish"
+                              title="Delete"
                             >
                               <Trash2 size={10} />
                             </Button>
@@ -1059,12 +1088,12 @@ export const Products: React.FC = () => {
                 <thead className="bg-light">
                   <tr>
                     <th style={{ width: '40px' }}></th>
-                    <th style={{ width: '25%' }}>Nomi</th>
-                    <th style={{ width: '12%' }}>Tannarx</th>
-                    <th style={{ width: '12%' }}>Narx</th>
-                    <th style={{ width: '10%' }}>Qoldiq</th>
-                    <th style={{ width: '8%' }}>Holati</th>
-                    <th style={{ width: '13%' }} className="text-center">Harakatlar</th>
+                    <th style={{ width: '25%' }}>Name</th>
+                    <th style={{ width: '12%' }}>Cost</th>
+                    <th style={{ width: '12%' }}>Price</th>
+                    <th style={{ width: '10%' }}>Stock</th>
+                    <th style={{ width: '8%' }}>Status</th>
+                    <th style={{ width: '13%' }} className="text-center">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1100,10 +1129,10 @@ export const Products: React.FC = () => {
                           </div>
                         </td>
                         <td>
-                          <small>{calculations.formatCurrency(Number(product.cost_price)).replace('$', '')} so'm</small>
+                          <small>{getDisplayPrice(product, 'cost')}</small>
                         </td>
                         <td>
-                          <strong className="text-success">{calculations.formatCurrency(Number(product.selling_price)).replace('$', '')} so'm</strong>
+                          <strong className="text-success">{getDisplayPrice(product, 'selling')}</strong>
                         </td>
                         <td>
                           <Badge bg={isLowStock ? 'danger' : 'success'} className="fs-8">
@@ -1112,7 +1141,7 @@ export const Products: React.FC = () => {
                         </td>
                         <td>
                           <Badge bg={product.is_active ? 'success' : 'danger'} className="fs-8">
-                            {product.is_active ? 'Faol' : 'Nofaol'}
+                            {product.is_active ? 'Active' : 'Inactive'}
                           </Badge>
                         </td>
                         <td>
@@ -1123,7 +1152,7 @@ export const Products: React.FC = () => {
                               className="p-0"
                               style={{ width: '22px', height: '22px' }}
                               onClick={() => handleViewImages(product)}
-                              title="Rasmlar"
+                              title="Images"
                             >
                               <Camera size={10} />
                             </Button>
@@ -1133,7 +1162,7 @@ export const Products: React.FC = () => {
                               className="p-0"
                               style={{ width: '22px', height: '22px' }}
                               onClick={() => handleEdit(product)}
-                              title="Tahrirlash"
+                              title="Edit"
                             >
                               <Edit size={10} />
                             </Button>
@@ -1143,7 +1172,7 @@ export const Products: React.FC = () => {
                               className="p-0"
                               style={{ width: '22px', height: '22px' }}
                               onClick={() => handleDelete(product)}
-                              title="O'chirish"
+                              title="Delete"
                             >
                               <Trash2 size={10} />
                             </Button>
@@ -1161,9 +1190,10 @@ export const Products: React.FC = () => {
         </Card.Body>
       </Card>
 
+      {/* Modals remain the same as before */}
       <Modal show={showModal} onHide={handleCloseModal} size="lg" centered scrollable>
         <Modal.Header closeButton className="py-2">
-          <Modal.Title className="h6">Yangi Mahsulot</Modal.Title>
+          <Modal.Title className="h6">New Product</Modal.Title>
         </Modal.Header>
         <Form onSubmit={handleSubmit}>
           <Modal.Body className="py-2">
@@ -1174,14 +1204,14 @@ export const Products: React.FC = () => {
             )}
             
             <Form.Group className="mb-2">
-              <Form.Label className="small fw-semibold">Mahsulot Nomi *</Form.Label>
+              <Form.Label className="small fw-semibold">Product Name *</Form.Label>
               <Form.Control
                 type="text"
                 name="name"
                 value={formData.name}
                 onChange={handleInputChange}
                 isInvalid={!!errors.name}
-                placeholder="Mahsulot nomi"
+                placeholder="Product name"
                 size="sm"
               />
               <Form.Control.Feedback type="invalid" className="small">
@@ -1192,7 +1222,7 @@ export const Products: React.FC = () => {
             <div className="row g-2 mb-2">
               <div className="col-6">
                 <Form.Group>
-                  <Form.Label className="small fw-semibold">Tannarx *</Form.Label>
+                  <Form.Label className="small fw-semibold">Cost Price * (USD)</Form.Label>
                   <Form.Control
                     type="number"
                     name="cost_price"
@@ -1207,11 +1237,14 @@ export const Products: React.FC = () => {
                   <Form.Control.Feedback type="invalid" className="small">
                     {errors.cost_price}
                   </Form.Control.Feedback>
+                  <Form.Text className="text-muted small">
+                    Enter price in USD. Will be converted to UZS for storage.
+                  </Form.Text>
                 </Form.Group>
               </div>
               <div className="col-6">
                 <Form.Group>
-                  <Form.Label className="small fw-semibold">Sotish Narxi *</Form.Label>
+                  <Form.Label className="small fw-semibold">Selling Price * (USD)</Form.Label>
                   <Form.Control
                     type="number"
                     name="selling_price"
@@ -1226,6 +1259,9 @@ export const Products: React.FC = () => {
                   <Form.Control.Feedback type="invalid" className="small">
                     {errors.selling_price}
                   </Form.Control.Feedback>
+                  <Form.Text className="text-muted small">
+                    Enter price in USD. Will be converted to UZS for storage.
+                  </Form.Text>
                 </Form.Group>
               </div>
             </div>
@@ -1233,7 +1269,7 @@ export const Products: React.FC = () => {
             <div className="row g-2 mb-2">
               <div className="col-6">
                 <Form.Group>
-                  <Form.Label className="small fw-semibold">Qoldiq *</Form.Label>
+                  <Form.Label className="small fw-semibold">Stock Quantity *</Form.Label>
                   <Form.Control
                     type="number"
                     name="stock_quantity"
@@ -1251,7 +1287,7 @@ export const Products: React.FC = () => {
               </div>
               <div className="col-6">
                 <Form.Group>
-                  <Form.Label className="small fw-semibold">Buyurtma Darajasi *</Form.Label>
+                  <Form.Label className="small fw-semibold">Reorder Level *</Form.Label>
                   <Form.Control
                     type="number"
                     name="reorder_level"
@@ -1270,25 +1306,25 @@ export const Products: React.FC = () => {
             </div>
 
             <Form.Group className="mb-2">
-              <Form.Label className="small fw-semibold">Oʻlchov Birligi</Form.Label>
+              <Form.Label className="small fw-semibold">Unit of Measure</Form.Label>
               <Form.Select
                 name="unit_of_measure"
                 value={formData.unit_of_measure}
                 onChange={handleInputChange}
                 size="sm"
               >
-                <option value="dona">Dona</option>
+                <option value="unit">Unit</option>
                 <option value="kg">Kilogram</option>
                 <option value="g">Gram</option>
-                <option value="l">Litr</option>
-                <option value="ml">Millilitr</option>
-                <option value="m">Metr</option>
-                <option value="cm">Santimetr</option>
+                <option value="l">Liter</option>
+                <option value="ml">Milliliter</option>
+                <option value="m">Meter</option>
+                <option value="cm">Centimeter</option>
               </Form.Select>
             </Form.Group>
 
             <Form.Group className="mb-2">
-              <Form.Label className="small fw-semibold">Rasmlar</Form.Label>
+              <Form.Label className="small fw-semibold">Images</Form.Label>
               <Form.Control
                 type="file"
                 multiple
@@ -1297,13 +1333,13 @@ export const Products: React.FC = () => {
                 size="sm"
               />
               <Form.Text className="text-muted small">
-                Bir nechta rasm yuklashingiz mumkin
+                You can upload multiple images
               </Form.Text>
             </Form.Group>
 
             {imagePreviews.length > 0 && (
               <div className="mb-2">
-                <p className="text-muted small mb-2">Tanlangan rasmlar:</p>
+                <p className="text-muted small mb-2">Selected images:</p>
                 <div className="d-flex flex-wrap gap-1">
                   {imagePreviews.map((preview, index) => (
                     <div key={index} className="position-relative" style={{ width: '50px', height: '50px' }}>
@@ -1330,24 +1366,24 @@ export const Products: React.FC = () => {
             )}
 
             <Form.Group className="mb-2">
-              <Form.Label className="small fw-semibold">Tavsif</Form.Label>
+              <Form.Label className="small fw-semibold">Description</Form.Label>
               <Form.Control
                 as="textarea"
                 rows={2}
                 name="description"
                 value={formData.description}
                 onChange={handleInputChange}
-                placeholder="Mahsulot tavsifi"
+                placeholder="Product description"
                 size="sm"
               />
             </Form.Group>
           </Modal.Body>
           <Modal.Footer className="py-2">
             <Button variant="outline-secondary" size="sm" onClick={handleCloseModal} disabled={submitLoading || uploadLoading}>
-              Bekor Qilish
+              Cancel
             </Button>
             <Button variant="primary" size="sm" type="submit" disabled={submitLoading || uploadLoading}>
-              {submitLoading || uploadLoading ? 'Qo\'shilmoqda...' : 'Qo\'shish'}
+              {submitLoading || uploadLoading ? 'Adding...' : 'Add'}
             </Button>
           </Modal.Footer>
         </Form>
@@ -1355,7 +1391,7 @@ export const Products: React.FC = () => {
 
       <Modal show={showEditModal} onHide={handleCloseEditModal} size="lg" centered scrollable>
         <Modal.Header closeButton className="py-2">
-          <Modal.Title className="h6">Tahrirlash - {selectedProduct?.name}</Modal.Title>
+          <Modal.Title className="h6">Edit - {selectedProduct?.name}</Modal.Title>
         </Modal.Header>
         <Form onSubmit={handleUpdate}>
           <Modal.Body className="py-2">
@@ -1366,14 +1402,14 @@ export const Products: React.FC = () => {
             )}
             
             <Form.Group className="mb-2">
-              <Form.Label className="small fw-semibold">Mahsulot Nomi *</Form.Label>
+              <Form.Label className="small fw-semibold">Product Name *</Form.Label>
               <Form.Control
                 type="text"
                 name="name"
                 value={formData.name}
                 onChange={handleInputChange}
                 isInvalid={!!errors.name}
-                placeholder="Mahsulot nomi"
+                placeholder="Product name"
                 size="sm"
               />
               <Form.Control.Feedback type="invalid" className="small">
@@ -1384,7 +1420,7 @@ export const Products: React.FC = () => {
             <div className="row g-2 mb-2">
               <div className="col-6">
                 <Form.Group>
-                  <Form.Label className="small fw-semibold">Tannarx *</Form.Label>
+                  <Form.Label className="small fw-semibold">Cost Price * (USD)</Form.Label>
                   <Form.Control
                     type="number"
                     name="cost_price"
@@ -1399,11 +1435,14 @@ export const Products: React.FC = () => {
                   <Form.Control.Feedback type="invalid" className="small">
                     {errors.cost_price}
                   </Form.Control.Feedback>
+                  <Form.Text className="text-muted small">
+                    Price in USD. Stored as UZS in database.
+                  </Form.Text>
                 </Form.Group>
               </div>
               <div className="col-6">
                 <Form.Group>
-                  <Form.Label className="small fw-semibold">Sotish Narxi *</Form.Label>
+                  <Form.Label className="small fw-semibold">Selling Price * (USD)</Form.Label>
                   <Form.Control
                     type="number"
                     name="selling_price"
@@ -1418,6 +1457,9 @@ export const Products: React.FC = () => {
                   <Form.Control.Feedback type="invalid" className="small">
                     {errors.selling_price}
                   </Form.Control.Feedback>
+                  <Form.Text className="text-muted small">
+                    Price in USD. Stored as UZS in database.
+                  </Form.Text>
                 </Form.Group>
               </div>
             </div>
@@ -1425,7 +1467,7 @@ export const Products: React.FC = () => {
             <div className="row g-2 mb-2">
               <div className="col-6">
                 <Form.Group>
-                  <Form.Label className="small fw-semibold">Qoldiq *</Form.Label>
+                  <Form.Label className="small fw-semibold">Stock Quantity *</Form.Label>
                   <Form.Control
                     type="number"
                     name="stock_quantity"
@@ -1443,7 +1485,7 @@ export const Products: React.FC = () => {
               </div>
               <div className="col-6">
                 <Form.Group>
-                  <Form.Label className="small fw-semibold">Buyurtma Darajasi *</Form.Label>
+                  <Form.Label className="small fw-semibold">Reorder Level *</Form.Label>
                   <Form.Control
                     type="number"
                     name="reorder_level"
@@ -1462,25 +1504,25 @@ export const Products: React.FC = () => {
             </div>
 
             <Form.Group className="mb-2">
-              <Form.Label className="small fw-semibold">Oʻlchov Birligi</Form.Label>
+              <Form.Label className="small fw-semibold">Unit of Measure</Form.Label>
               <Form.Select
                 name="unit_of_measure"
                 value={formData.unit_of_measure}
                 onChange={handleInputChange}
                 size="sm"
               >
-                <option value="dona">Dona</option>
+                <option value="unit">Unit</option>
                 <option value="kg">Kilogram</option>
                 <option value="g">Gram</option>
-                <option value="l">Litr</option>
-                <option value="ml">Millilitr</option>
-                <option value="m">Metr</option>
-                <option value="cm">Santimetr</option>
+                <option value="l">Liter</option>
+                <option value="ml">Milliliter</option>
+                <option value="m">Meter</option>
+                <option value="cm">Centimeter</option>
               </Form.Select>
             </Form.Group>
 
             <Form.Group className="mb-2">
-              <Form.Label className="small fw-semibold">Yangi Rasmlar</Form.Label>
+              <Form.Label className="small fw-semibold">New Images</Form.Label>
               <Form.Control
                 type="file"
                 multiple
@@ -1489,13 +1531,13 @@ export const Products: React.FC = () => {
                 size="sm"
               />
               <Form.Text className="text-muted small">
-                Yangi rasmlar qo'shishingiz mumkin
+                You can add new images
               </Form.Text>
             </Form.Group>
 
             {imagePreviews.length > 0 && (
               <div className="mb-2">
-                <p className="text-muted small mb-2">Yangi rasmlar:</p>
+                <p className="text-muted small mb-2">New images:</p>
                 <div className="d-flex flex-wrap gap-1">
                   {imagePreviews.map((preview, index) => (
                     <div key={index} className="position-relative" style={{ width: '50px', height: '50px' }}>
@@ -1522,24 +1564,24 @@ export const Products: React.FC = () => {
             )}
 
             <Form.Group className="mb-2">
-              <Form.Label className="small fw-semibold">Tavsif</Form.Label>
+              <Form.Label className="small fw-semibold">Description</Form.Label>
               <Form.Control
                 as="textarea"
                 rows={2}
                 name="description"
                 value={formData.description}
                 onChange={handleInputChange}
-                placeholder="Mahsulot tavsifi"
+                placeholder="Product description"
                 size="sm"
               />
             </Form.Group>
           </Modal.Body>
           <Modal.Footer className="py-2">
             <Button variant="outline-secondary" size="sm" onClick={handleCloseEditModal} disabled={submitLoading || uploadLoading}>
-              Bekor Qilish
+              Cancel
             </Button>
             <Button variant="primary" size="sm" type="submit" disabled={submitLoading || uploadLoading}>
-              {submitLoading || uploadLoading ? 'Yangilanmoqda...' : 'Yangilash'}
+              {submitLoading || uploadLoading ? 'Updating...' : 'Update'}
             </Button>
           </Modal.Footer>
         </Form>
@@ -1547,7 +1589,7 @@ export const Products: React.FC = () => {
 
       <Modal show={showImageModal} onHide={handleCloseImageModal} size="lg" centered scrollable>
         <Modal.Header closeButton className="py-2">
-          <Modal.Title className="h6">Rasmlar - {selectedProduct?.name}</Modal.Title>
+          <Modal.Title className="h6">Images - {selectedProduct?.name}</Modal.Title>
         </Modal.Header>
         <Modal.Body className="py-2">
           {selectedProduct && (
@@ -1555,7 +1597,7 @@ export const Products: React.FC = () => {
               {selectedProduct.images.length === 0 ? (
                 <div className="text-center py-3">
                   <Camera size={24} className="text-muted mb-1" />
-                  <p className="text-muted small">Hech qanday rasm mavjud emas</p>
+                  <p className="text-muted small">No images available</p>
                 </div>
               ) : (
                 <Row>
@@ -1573,7 +1615,7 @@ export const Products: React.FC = () => {
                           />
                           <div className="d-flex justify-content-between align-items-center mt-1">
                             <Badge bg={image.is_primary ? 'primary' : 'secondary'} className="fs-8">
-                              {image.is_primary ? 'Asosiy' : 'Qo`shimcha'}
+                              {image.is_primary ? 'Primary' : 'Additional'}
                             </Badge>
                             <div className="d-flex gap-1">
                               {!image.is_primary && (
@@ -1583,9 +1625,9 @@ export const Products: React.FC = () => {
                                   className="p-0"
                                   style={{ width: '20px', height: '20px' }}
                                   onClick={() => handleSetPrimaryImage(image.id)}
-                                  title="Asosiy qilish"
+                                  title="Set as primary"
                                 >
-                                  <small style={{ fontSize: '8px' }}>A</small>
+                                  <small style={{ fontSize: '8px' }}>P</small>
                                 </Button>
                               )}
                               <Button
@@ -1594,7 +1636,7 @@ export const Products: React.FC = () => {
                                 className="p-0"
                                 style={{ width: '20px', height: '20px' }}
                                 onClick={() => handleDeleteImage(image.id)}
-                                title="O'chirish"
+                                title="Delete"
                               >
                                 <Trash2 size={10} />
                               </Button>
@@ -1611,32 +1653,32 @@ export const Products: React.FC = () => {
         </Modal.Body>
         <Modal.Footer className="py-2">
           <Button variant="secondary" size="sm" onClick={handleCloseImageModal}>
-            Yopish
+            Close
           </Button>
         </Modal.Footer>
       </Modal>
 
       <Modal show={showDeleteModal} onHide={handleCloseDeleteModal} centered>
         <Modal.Header closeButton className="py-2">
-          <Modal.Title className="h6">O'chirish</Modal.Title>
+          <Modal.Title className="h6">Delete</Modal.Title>
         </Modal.Header>
         <Modal.Body className="py-2">
           {selectedProduct && (
             <p className="small mb-0">
-              <strong>"{selectedProduct.name}"</strong> mahsulotini o'chirishni xohlaysizmi? 
-              Bu amalni ortga qaytarib bo'lmaydi.
+              Are you sure you want to delete product <strong>"{selectedProduct.name}"</strong>? 
+              This action cannot be undone.
             </p>
           )}
         </Modal.Body>
         <Modal.Footer className="py-2">
           <Button variant="outline-secondary" size="sm" onClick={handleCloseDeleteModal} disabled={submitLoading}>
-            Bekor Qilish
+            Cancel
           </Button>
           <Button variant="danger" size="sm" onClick={confirmDelete} disabled={submitLoading}>
-            {submitLoading ? 'O\'chirilmoqda...' : 'O\'chirish'}
+            {submitLoading ? 'Deleting...' : 'Delete'}
           </Button>
         </Modal.Footer>
       </Modal>
     </Container>  
   );      
-};
+};  

@@ -94,7 +94,6 @@ export const Profile: React.FC = () => {
         throw new Error(result.message);
       }
     } catch (error) {
-      console.error('Error fetching profile:', error);
       setMessage({ type: 'error', text: 'Failed to load profile' });
     } finally {
       setLoading(false);
@@ -126,7 +125,6 @@ export const Profile: React.FC = () => {
         throw new Error(result.message);
       }
     } catch (error) {
-      console.error('Error updating profile:', error);
       setMessage({ type: 'error', text: 'Failed to update profile' });
     } finally {
       setSaving(false);
@@ -181,7 +179,6 @@ export const Profile: React.FC = () => {
         throw new Error(result.message || 'Failed to change password');
       }
     } catch (error) {
-      console.error('Error changing password:', error);
       setMessage({ 
         type: 'error', 
         text: error instanceof Error ? error.message : 'Failed to change password' 
@@ -218,7 +215,6 @@ export const Profile: React.FC = () => {
         throw new Error(result.message);
       }
     } catch (error) {
-      console.error('Error updating avatar:', error);
       setMessage({ type: 'error', text: 'Failed to update profile picture' });
     }
   };

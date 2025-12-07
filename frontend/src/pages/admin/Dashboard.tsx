@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import * as React from 'react';
+import { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Button, Alert, Table, Badge } from 'react-bootstrap';
 import {
   DollarSign,
@@ -12,7 +13,7 @@ import {
   Calendar
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { ResponsiveContainer, PieChart, Pie, Cell, Legend, Tooltip, LineChart, Line, CartesianGrid, XAxis, YAxis } from 'recharts';
+import { ResponsiveContainer, PieChart, Pie, Cell, Legend, Tooltip, LineChart, Line, CartesianGrid, XAxis, YAxis, PieLabelRenderProps } from 'recharts';
 
 interface DashboardMetrics {
   totalProductsValue: number;
@@ -500,7 +501,7 @@ export const Dashboard: React.FC = () => {
   };
 
   const getTrendingData = (): TrendData[] => {
-    return dailySales.map(day => ({
+    return dailySales.map((day: DailySalesData) => ({
       date: day.date,
       value: day.sales
     }));
@@ -705,7 +706,7 @@ export const Dashboard: React.FC = () => {
             Daily Sales (7 days)
           </h6>
           <Badge bg="light" text="dark" className="small">
-            {dailySales.reduce((sum, day) => sum + day.orders, 0)} orders
+            {dailySales.reduce((sum: number, day: DailySalesData) => sum + day.orders, 0)} orders
           </Badge>
         </Card.Header>
         <Card.Body className="p-0">
@@ -723,7 +724,7 @@ export const Dashboard: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {dailySales.map((day, index) => (
+                {dailySales.map((day: DailySalesData, index: number) => (
                   <tr 
                     key={index} 
                     className="table-row-hover"
@@ -786,12 +787,8 @@ export const Dashboard: React.FC = () => {
                     innerRadius={20}
                     fill="#8884d8"
                     dataKey="value"
-                    label={({ name, percent }) => `${(percent * 100).toFixed(0)}%`}
-                  >
-                    {getFinancialBreakdown().map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
+                    label={({ percent }: { percent?: number }) => `${((percent || 0) * 100).toFixed(0)}%`}
+                  />
                   <Tooltip formatter={(value) => formatCurrency(Number(value))} />
                   <Legend wrapperStyle={{ fontSize: '10px', paddingTop: '5px' }} />
                 </PieChart>
@@ -811,10 +808,10 @@ export const Dashboard: React.FC = () => {
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis 
                     dataKey="date" 
-                    fontSize={9}
+                    tick={{ fontSize: 9 }}
                   />
                   <YAxis 
-                    fontSize={9} 
+                    tick={{ fontSize: 9 }}
                     tickFormatter={(value) => {
                       if (value === 0) return '$0';
                       if (value < 1000) return `$${value}`;

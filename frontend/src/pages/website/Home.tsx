@@ -66,7 +66,6 @@ export const Home: React.FC = () => {
         throw new Error(result.message || 'Failed to load products');
       }
     } catch (error) {
-      console.error('Error fetching products:', error);
       setProducts([]);
     } finally {
       setLoading(false);

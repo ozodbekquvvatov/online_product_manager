@@ -1,47 +1,37 @@
-import React, { useState } from 'react';
-import { Container, Row, Col, Card, Form, Button, Alert } from 'react-bootstrap';
-import { useAuth } from '../../contexts/AuthContext';
-import { Building2 } from 'lucide-react';
-import axios from 'axios';
+import * as React from "react";
+import { useState } from "react";
+import {
+  Container,
+  Row,
+  Col,
+  Card,
+  Form,
+  Button,
+  Alert,
+} from "react-bootstrap";
+import { useAuth } from "../../contexts/AuthContext";
+import { Building2 } from "lucide-react";
 
 export const Login: React.FC = () => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const { signIn } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setError("");
     setLoading(true);
 
     try {
       await signIn(email, password);
-    } catch (err: unknown) {
-      console.error('Login error:', err);
-      
-      if (axios.isAxiosError(err)) {
-        if (err.response) {
-          const serverResponse = err.response.data;
-          
-          if (serverResponse.message) {
-            setError(serverResponse.message);
-          } else if (serverResponse.errors) {
-            const firstError = Object.values(serverResponse.errors)[0];
-            setError(Array.isArray(firstError) ? firstError[0] : firstError);
-          } else {
-            setError('Login failed. Please check your credentials.');
-          }
-        } else if (err.request) {
-          setError('Cannot connect to server. Please check your connection.');
-        } else {
-          setError('An unexpected error occurred');
-        }
-      } else if (err instanceof Error) {
+    } catch (err) {
+
+      if (err instanceof Error) {
         setError(err.message);
       } else {
-        setError('An unknown error occurred during login');
+        setError("An unknown error occurred during login");
       }
     } finally {
       setLoading(false);
@@ -56,7 +46,10 @@ export const Login: React.FC = () => {
             <Card className="shadow-lg border-0">
               <Card.Body className="p-5">
                 <div className="text-center mb-4">
-                  <div className="d-inline-flex align-items-center justify-content-center bg-primary text-white rounded-circle mb-3" style={{ width: '80px', height: '80px' }}>
+                  <div
+                    className="d-inline-flex align-items-center justify-content-center bg-primary text-white rounded-circle mb-3"
+                    style={{ width: "80px", height: "80px" }}
+                  >
                     <Building2 size={40} />
                   </div>
                   <h2 className="fw-bold">Business Management</h2>
@@ -64,7 +57,11 @@ export const Login: React.FC = () => {
                 </div>
 
                 {error && (
-                  <Alert variant="danger" dismissible onClose={() => setError('')}>
+                  <Alert
+                    variant="danger"
+                    dismissible
+                    onClose={() => setError("")}
+                  >
                     {error}
                   </Alert>
                 )}
@@ -103,11 +100,15 @@ export const Login: React.FC = () => {
                   >
                     {loading ? (
                       <>
-                        <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                        <span
+                          className="spinner-border spinner-border-sm me-2"
+                          role="status"
+                          aria-hidden="true"
+                        ></span>
                         Signing In...
                       </>
                     ) : (
-                      'Sign In'
+                      "Sign In"
                     )}
                   </Button>
                 </Form>

@@ -95,7 +95,6 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
     if (!isAuthenticated) return;
 
     try {
-      console.log('🔄 Refreshing all data through DataContext...');
       const [employeesData, productsData, salesData] = await Promise.all([
         fetchEmployees(),
         fetchProducts(),
@@ -107,9 +106,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
       setSales(salesData);
       setLastUpdated(new Date());
       
-      console.log('✅ DataContext refreshed all data');
     } catch (error) {
-      console.error('❌ DataContext refresh failed:', error);
     }
   };
 

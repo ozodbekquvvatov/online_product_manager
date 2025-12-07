@@ -199,11 +199,28 @@ export const useBusinessCalculations = () => {
       return amount * (taxRate / 100);
     },
 
+    // Format as USD (English/Dollars)
     formatCurrency: (amount: number): string => {
       return new Intl.NumberFormat('en-US', {
         style: 'currency',
         currency: 'USD',
       }).format(amount);
+    },
+
+    // Convert UZS to USD and format (for when your data is in UZS)
+    formatUZStoUSD: (uzsAmount: number, exchangeRate: number = 12500): string => {
+      const usdAmount = uzsAmount / exchangeRate;
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      }).format(usdAmount);
+    },
+
+    // Just convert UZS to USD number (no formatting)
+    convertUZStoUSD: (uzsAmount: number, exchangeRate: number = 12500): number => {
+      return uzsAmount / exchangeRate;
     },
 
     formatPercentage: (value: number, decimals: number = 2): string => {

@@ -1,551 +1,589 @@
-import React, { useEffect, useState } from 'react';
-import { 
-  Container, 
-  Row, 
-  Col, 
-  Card, 
-  Table, 
-  Button, 
-  Badge, 
-  Form, 
-  Modal, 
-  Alert, 
-  Pagination 
-} from 'react-bootstrap';
-import {
-  Package,
-  AlertTriangle,
-  CheckCircle,
-  TrendingUp,
-  TrendingDown,
-  Plus,
-  Search,
-  Filter,
-  Download,
-  Eye,
-  Edit,
-  Trash2,
-  ArrowUpDown,
-  ShoppingCart,
-  Warehouse,
-  RefreshCw,
-  ChevronLeft,
-  ChevronRight
-} from 'lucide-react';
+import * as React from 'react';
+import { useEffect, useState } from 'react';
+import { Container, Row, Col, Card, Table, Button, Badge, Modal, Form, Alert, Dropdown } from 'react-bootstrap';
+import { Users, Plus, Eye, Edit, Trash2, Mail, Phone, MapPin, MoreVertical } from 'lucide-react';
+import type { Employee } from '../../types/database.types';
 import { useBusinessCalculations } from '../../hooks/useBusinessCalculations';
-import axios from 'axios';
-
-interface Product {
-  id: number;
-  name: string;
-  sku: string;
-  category: string;
-  current_stock: number;
-  min_stock: number;
-  max_stock: number;
-  cost_price: number;
-  selling_price: number;
-  status: 'in_stock' | 'low_stock' | 'out_of_stock';
-  last_restocked: string;
-  supplier: string;
-  stock_quantity: number;
-  reorder_level: number;
-  unit_of_measure: string;
-  is_active: boolean;
-}
-
-interface InventoryStats {
-  totalProducts: number;
-  totalValue: number;
-  lowStockItems: number;
-  outOfStockItems: number;
-  totalCategories: number;
-  inventoryTurnover: number;
-  stockValue: number;
-}
-
-interface StockMovement {
-  id: number;
-  product_id: number;
-  product_name: string;
-  type: 'in' | 'out';
-  quantity: number;
-  reason: 'sale' | 'restock' | 'return' | 'adjustment' | 'damage';
-  date: string;
-  user: string;
-}
-
-interface CategorySummary {
-  category: string;
-  productCount: number;
-  totalValue: number;
-  lowStockCount: number;
-}
 
 export const Inventory: React.FC = () => {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [stats, setStats] = useState<InventoryStats>({
-    totalProducts: 0,
-    totalValue: 0,
-    lowStockItems: 0,
-    outOfStockItems: 0,
-    totalCategories: 0,
-    inventoryTurnover: 0,
-    stockValue: 0
-  });
-  const [stockMovements, setStockMovements] = useState<StockMovement[]>([]);
-  const [categories, setCategories] = useState<CategorySummary[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showProductModal, setShowProductModal] = useState(false);
-  const [showRestockModal, setShowRestockModal] = useState(false);
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('all');
-  const [selectedStatus, setSelectedStatus] = useState('all');
-  const [restockQuantity, setRestockQuantity] = useState('');
+  const [showModal, setShowModal] = useState(false);
+  const [showViewModal, setShowViewModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [error, setError] = useState<string>('');
   const [success, setSuccess] = useState<string>('');
-  const [viewMode, setViewMode] = useState<'cards' | 'table'>('table');
-  
-  // Pagination state
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(10);
+  const [formErrors, setFormErrors] = useState<{[key: string]: string}>({});
+  const [formData, setFormData] = useState({
+    first_name: '',
+    last_name: '',
+    phone: '',
+    position: '',
+    department: '',
+    base_salary: '',
+    hire_date: '',
+    date_of_birth: '',
+    address: '',
+    employment_type: 'full_time',
+    work_hours_per_day: '8',
+    work_shift: 'day',
+    is_active: true
+  });
 
   const calculations = useBusinessCalculations();
 
-  const API_BASE_URL = 'http://127.0.0.1:8000';
-
-  // Format currency without dollar sign
-  const formatCurrency = (amount: number) => {
-    return calculations.formatCurrency(amount);
+  const formatCurrency = (amount: number): string => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(amount);
   };
 
-  const fetchInventoryData = async () => {
+  const API_BASE_URL = 'http://127.0.0.1:8000';
+
+  const fetchEmployees = async () => {
     try {
       setLoading(true);
+      setError('');
       const token = localStorage.getItem('admin_token');
       
-      const [productsResponse, statsResponse] = await Promise.all([
-        axios.get(`${API_BASE_URL}/api/admin/products`, {
-          headers: { 'Authorization': `Bearer ${token}` },
-          withCredentials: true
-        }),
-        axios.get(`${API_BASE_URL}/api/admin/inventory/stats`, {
-          headers: { 'Authorization': `Bearer ${token}` },
-          withCredentials: true
-        })
-      ]);
-
-      if (productsResponse.data.success) {
-        const productsData = productsResponse.data.data.map((product: any) => ({
-          ...product,
-          current_stock: product.stock_quantity,
-          min_stock: product.reorder_level,
-          max_stock: product.reorder_level * 2,
-          status: getStockStatus(product.stock_quantity, product.reorder_level),
-          category: 'General',
-          supplier: 'Standard Supplier',
-          last_restocked: product.updated_at ? new Date(product.updated_at).toLocaleDateString() : 'Never'
-        }));
-        setProducts(productsData);
+      if (!token) {
+        throw new Error('Authentication token not found. Please log in again.');
       }
 
-      if (statsResponse.data.success) {
-        setStats(statsResponse.data.data);
+      const response = await fetch(`${API_BASE_URL}/api/admin/employees`, {      
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        credentials: 'include'
+      });
+
+      if (response.status === 401) {
+        throw new Error('Authentication failed. Please log in again.');
+      } else if (response.status === 403) {
+        throw new Error('Access denied. Please check your permissions.');
+      } else if (response.status === 404) {
+        throw new Error('Employees endpoint not found (404). Check backend routes.');
+      } else if (!response.ok) {
+        throw new Error(`Server error: ${response.status}`);
       }
 
-      generateMockData(productsResponse.data.data);
-
-    } catch (error) {
-      console.error('Error loading inventory data:', error);
-      setError('Failed to load inventory data');
+      const result = await response.json();
+      
+      if (result.success && result.data) {
+        setEmployees(result.data);
+      } else if (Array.isArray(result)) {
+        setEmployees(result);
+      } else {
+        setEmployees([]);
+      }
+    } catch (error: any) {
+      setError(error.message || 'Failed to load employees');
+      setEmployees([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const generateMockData = (productsData: any[]) => {
-    const mockMovements: StockMovement[] = [
-      {
-        id: 1,
-        product_id: 1,
-        product_name: productsData[0]?.name || 'Product 1',
-        type: 'in',
-        quantity: 50,
-        reason: 'restock',
-        date: new Date().toISOString().split('T')[0],
-        user: 'Admin User'
-      },
-      {
-        id: 2,
-        product_id: 2,
-        product_name: productsData[1]?.name || 'Product 2',
-        type: 'out',
-        quantity: 10,
-        reason: 'sale',
-        date: new Date().toISOString().split('T')[0],
-        user: 'Admin User'
-      }
-    ];
-    setStockMovements(mockMovements);
-
-    const mockCategories: CategorySummary[] = [
-      {
-        category: 'General',
-        productCount: productsData.length,
-        totalValue: productsData.reduce((sum: number, product: any) => sum + (product.cost_price * product.stock_quantity), 0),
-        lowStockCount: productsData.filter((product: any) => product.stock_quantity <= product.reorder_level).length
-      }
-    ];
-    setCategories(mockCategories);
-  };
-
-  const getStockStatus = (currentStock: number, minStock: number): 'in_stock' | 'low_stock' | 'out_of_stock' => {
-    if (currentStock === 0) return 'out_of_stock';
-    if (currentStock <= minStock) return 'low_stock';
-    return 'in_stock';
-  };
-
   useEffect(() => {
-    fetchInventoryData();
+    fetchEmployees();
   }, []);
 
-  // Filter products based on search and filters
-  const filteredProducts = products.filter(product => {
-    const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         product.sku?.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCategory = selectedCategory === 'all' || product.category === selectedCategory;
-    const matchesStatus = selectedStatus === 'all' || product.status === selectedStatus;
-    
-    return matchesSearch && matchesCategory && matchesStatus;
-  });
+  const validateForm = () => {
+    const errors: {[key: string]: string} = {};
 
-  // Pagination calculations
-  const indexOfLastItem = currentPage * itemsPerPage;
-  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentProducts = filteredProducts.slice(indexOfFirstItem, indexOfLastItem);
-  const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
-
-  // Change page
-  const paginate = (pageNumber: number) => setCurrentPage(pageNumber);
-
-  // Generate pagination items
-  const renderPaginationItems = () => {
-    const items = [];
-    const maxVisiblePages = 5;
-    
-    let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
-    let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
-
-    if (endPage - startPage + 1 < maxVisiblePages) {
-      startPage = Math.max(1, endPage - maxVisiblePages + 1);
+    if (!formData.first_name.trim()) {
+      errors.first_name = 'First name is required';
     }
 
-    // Previous button
-    items.push(
-      <Pagination.Prev
-        key="prev"
-        onClick={() => currentPage > 1 && paginate(currentPage - 1)}
-        disabled={currentPage === 1}
-      >
-        <ChevronLeft size={14} />
-      </Pagination.Prev>
-    );
-
-    // First page and ellipsis
-    if (startPage > 1) {
-      items.push(
-        <Pagination.Item key={1} onClick={() => paginate(1)}>
-          1
-        </Pagination.Item>
-      );
-      if (startPage > 2) {
-        items.push(<Pagination.Ellipsis key="start-ellipsis" />);
-      }
+    if (!formData.last_name.trim()) {
+      errors.last_name = 'Last name is required';
     }
 
-    // Page numbers
-    for (let page = startPage; page <= endPage; page++) {
-      items.push(
-        <Pagination.Item
-          key={page}
-          active={page === currentPage}
-          onClick={() => paginate(page)}
-        >
-          {page}
-        </Pagination.Item>
-      );
+    if (!formData.position.trim()) {
+      errors.position = 'Position is required';
     }
 
-    // Last page and ellipsis
-    if (endPage < totalPages) {
-      if (endPage < totalPages - 1) {
-        items.push(<Pagination.Ellipsis key="end-ellipsis" />);
-      }
-      items.push(
-        <Pagination.Item key={totalPages} onClick={() => paginate(totalPages)}>
-          {totalPages}
-        </Pagination.Item>
-      );
+    if (!formData.department.trim()) {
+      errors.department = 'Department is required';
     }
 
-    // Next button
-    items.push(
-      <Pagination.Next
-        key="next"
-        onClick={() => currentPage < totalPages && paginate(currentPage + 1)}
-        disabled={currentPage === totalPages}
-      >
-        <ChevronRight size={14} />
-      </Pagination.Next>
-    );
+    if (!formData.base_salary || Number(formData.base_salary) <= 0) {
+      errors.base_salary = 'Salary must be greater than 0';
+    }
 
-    return items;
+    if (!formData.work_hours_per_day || Number(formData.work_hours_per_day) < 1 || Number(formData.work_hours_per_day) > 24) {
+      errors.work_hours_per_day = 'Work hours must be between 1 and 24';
+    }
+
+    if (formData.hire_date && new Date(formData.hire_date) > new Date()) {
+      errors.hire_date = 'Hire date cannot be in the future';
+    }
+
+    if (formData.date_of_birth && new Date(formData.date_of_birth) > new Date()) {
+      errors.date_of_birth = 'Date of birth cannot be in the future';
+    }
+
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
   };
 
-  // Render pagination component
-  const renderPagination = () => {
-    if (totalPages <= 1) return null;
-
-    return (
-      <div className="d-flex justify-content-between align-items-center mt-3 px-3 py-2 border-top">
-        <small className="text-muted">
-          Showing: {indexOfFirstItem + 1}-{Math.min(indexOfLastItem, filteredProducts.length)} of {filteredProducts.length}
-        </small>
-        <Pagination className="mb-0">
-          {renderPaginationItems()}
-        </Pagination>
-      </div>
-    );
+  const handleViewEmployee = (employee: Employee) => {
+    setSelectedEmployee(employee);
+    setShowViewModal(true);
   };
 
-  const handleRestock = async () => {
-    if (!selectedProduct || !restockQuantity || parseInt(restockQuantity) <= 0) {
-      setError('Please enter a valid quantity');
+  const handleEditEmployee = (employee: Employee) => {
+    setSelectedEmployee(employee);
+    setFormData({
+      first_name: employee.first_name || '',
+      last_name: employee.last_name || '',
+      phone: employee.phone || '',
+      position: employee.position || '',
+      department: employee.department || '',
+      base_salary: employee.base_salary?.toString() || '',
+      hire_date: employee.hire_date ? employee.hire_date.split('T')[0] : '',
+      date_of_birth: employee.date_of_birth ? employee.date_of_birth.split('T')[0] : '',
+      address: employee.address || '',
+      employment_type: (employee as any).employment_type || 'full_time',
+      work_hours_per_day: (employee as any).work_hours_per_day?.toString() || '8',
+      work_shift: (employee as any).work_shift || 'day',
+      is_active: employee.is_active ?? true
+    });
+    setFormErrors({});
+    setShowEditModal(true);
+  };
+
+  const handleAddEmployee = () => {
+    setSelectedEmployee(null);
+    setFormData({
+      first_name: '',
+      last_name: '',
+      phone: '',
+      position: '',
+      department: '',
+      base_salary: '',
+      hire_date: '',
+      date_of_birth: '',
+      address: '',
+      employment_type: 'full_time',
+      work_hours_per_day: '8',
+      work_shift: 'day',
+      is_active: true
+    });
+    setFormErrors({});
+    setShowModal(true);
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    const { name, value, type } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : value
+    }));
+
+    if (formErrors[name]) {
+      setFormErrors(prev => ({
+        ...prev,
+        [name]: ''
+      }));
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+
+    if (!validateForm()) {
+      setError('Please fill in all fields correctly');
       return;
     }
 
     try {
       const token = localStorage.getItem('admin_token');
-      const response = await axios.patch(
-        `${API_BASE_URL}/api/admin/products/${selectedProduct.id}/stock`,
-        {
-          stock_quantity: selectedProduct.current_stock + parseInt(restockQuantity)
-        },
-        {
-          headers: { 'Authorization': `Bearer ${token}` },
-          withCredentials: true
-        }
-      );
-
-      if (response.data.success) {
-        setSuccess(`${selectedProduct.name} restocked successfully with ${restockQuantity} units`);
-        setRestockQuantity('');
-        setShowRestockModal(false);
-        fetchInventoryData();
-        setCurrentPage(1); // Reset to first page after restock
+      if (!token) {
+        throw new Error('Authentication token not found');
       }
-    } catch (error) {
-      console.error('Error restocking product:', error);
-      setError('Failed to restock product');
+
+      // Prepare the request body with proper null handling
+      const requestBody: any = {
+        first_name: formData.first_name.trim(),
+        last_name: formData.last_name.trim(),
+        position: formData.position.trim(),
+        department: formData.department.trim(),
+        base_salary: parseFloat(formData.base_salary),
+        employment_type: formData.employment_type,
+        work_hours_per_day: parseInt(formData.work_hours_per_day),
+        work_shift: formData.work_shift,
+        is_active: true
+      };
+
+      // Handle nullable fields - only include if they have values
+      if (formData.phone.trim()) {
+        requestBody.phone = formData.phone.trim();
+      } else {
+        requestBody.phone = null;
+      }
+
+      if (formData.hire_date) {
+        requestBody.hire_date = formData.hire_date;
+      } else {
+        requestBody.hire_date = null;
+      }
+
+      if (formData.date_of_birth) {
+        requestBody.date_of_birth = formData.date_of_birth;
+      } else {
+        requestBody.date_of_birth = null;
+      }
+
+      if (formData.address.trim()) {
+        requestBody.address = formData.address.trim();
+      } else {
+        requestBody.address = null;
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/admin/employees`, {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        credentials: 'include',
+        body: JSON.stringify(requestBody)
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        if (result.errors) {
+          const backendErrors: {[key: string]: string} = {};
+          Object.keys(result.errors).forEach(key => {
+            backendErrors[key] = result.errors[key][0];
+          });
+          setFormErrors(backendErrors);
+          setError('Please fill out the form correctly');
+        } else {
+          throw new Error(result.message || 'Failed to create employee');
+        }
+        return;
+      }
+
+      if (result.success) {
+        setSuccess('Employee created successfully');
+        setShowModal(false);
+        
+        setFormData({
+          first_name: '',
+          last_name: '',
+          phone: '',
+          position: '',
+          department: '',
+          base_salary: '',
+          hire_date: '',
+          date_of_birth: '',
+          address: '',
+          employment_type: 'full_time',
+          work_hours_per_day: '8',
+          work_shift: 'day',
+          is_active: true
+        });
+        setFormErrors({});
+        
+        await fetchEmployees();
+      } else {
+        throw new Error(result.message || 'Failed to create employee');
+      }
+
+    } catch (error: any) {
+      if (error.message.includes('Failed to fetch')) {
+        setError('Could not connect to server. Please check your internet connection.');
+      } else {
+        setError(error.message || 'Failed to create employee');
+      }
     }
   };
 
-  const MetricCard: React.FC<{
-    title: string;
-    value: string | number;
-    subtitle?: string;
-    icon: React.ReactNode;
-    variant?: string;
-  }> = ({ title, value, subtitle, icon, variant = 'primary' }) => (
-    <Card className="dashboard-card h-100">
-      <Card.Body className="p-3">
-        <div className="d-flex justify-content-between align-items-start">
-          <div>
-            <p className="text-muted mb-1 small">{title}</p>
-            <h6 className="mb-1 fw-bold">{value}</h6>
-            {subtitle && <small className="text-muted">{subtitle}</small>}
-          </div>
-          <div className={`bg-${variant} bg-opacity-10 p-2 rounded`}>
-            {React.cloneElement(icon as React.ReactElement, { size: 20 })}
-          </div>
-        </div>
-      </Card.Body>
-    </Card>
-  );
+  const handleUpdateEmployee = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
 
-  const getStockStatusBadge = (status: string) => {
-    const variants = {
-      in_stock: 'success',
-      low_stock: 'warning',
-      out_of_stock: 'danger'
-    };
-    
-    const icons = {
-      in_stock: <CheckCircle size={12} className="me-1" />,
-      low_stock: <AlertTriangle size={12} className="me-1" />,
-      out_of_stock: <Package size={12} className="me-1" />
-    };
+    if (!selectedEmployee) return;
 
-    const labels = {
-      in_stock: 'In Stock',
-      low_stock: 'Low Stock',
-      out_of_stock: 'Out of Stock'
-    };
+    if (!validateForm()) {
+      setError('Please fill in all fields correctly');
+      return;
+    }
 
-    return (
-      <Badge bg={variants[status as keyof typeof variants]} className="d-flex align-items-center fs-7">
-        {icons[status as keyof typeof icons]}
-        {labels[status as keyof typeof labels]}
-      </Badge>
-    );
+    try {
+      const token = localStorage.getItem('admin_token');
+      if (!token) {
+        throw new Error('Authentication token not found');
+      }
+
+      // Prepare the request body with proper null handling
+      const requestBody: any = {
+        first_name: formData.first_name.trim(),
+        last_name: formData.last_name.trim(),
+        position: formData.position.trim(),
+        department: formData.department.trim(),
+        base_salary: parseFloat(formData.base_salary),
+        employment_type: formData.employment_type,
+        work_hours_per_day: parseInt(formData.work_hours_per_day),
+        work_shift: formData.work_shift,
+        is_active: formData.is_active
+      };
+
+      // Handle nullable fields - only include if they have values
+      if (formData.phone.trim()) {
+        requestBody.phone = formData.phone.trim();
+      } else {
+        requestBody.phone = null;
+      }
+
+      if (formData.hire_date) {
+        requestBody.hire_date = formData.hire_date;
+      } else {
+        requestBody.hire_date = null;
+      }
+
+      if (formData.date_of_birth) {
+        requestBody.date_of_birth = formData.date_of_birth;
+      } else {
+        requestBody.date_of_birth = null;
+      }
+
+      if (formData.address.trim()) {
+        requestBody.address = formData.address.trim();
+      } else {
+        requestBody.address = null;
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/admin/employees/${selectedEmployee.id}`, {
+        method: 'PUT',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        credentials: 'include',
+        body: JSON.stringify(requestBody)
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        if (result.errors) {
+          const backendErrors: {[key: string]: string} = {};
+          Object.keys(result.errors).forEach(key => {
+            backendErrors[key] = result.errors[key][0];
+          });
+          setFormErrors(backendErrors);
+          setError('Please fill out the form correctly');
+        } else {
+          throw new Error(result.message || 'Failed to update employee');
+        }
+        return;
+      }
+
+      if (result.success) {
+        setSuccess('Employee updated successfully');
+        setShowEditModal(false);
+        setSelectedEmployee(null);
+        setFormErrors({});
+        await fetchEmployees();
+      } else {
+        throw new Error(result.message || 'Failed to update employee');
+      }
+
+    } catch (error: any) {
+      if (error.message.includes('Failed to fetch')) {
+        setError('Could not connect to server. Please check your internet connection.');
+      } else {
+        setError(error.message || 'Failed to update employee');
+      }
+    }
   };
 
-  const handleViewProduct = (product: Product) => {
-    setSelectedProduct(product);
-    setShowProductModal(true);
+  const handleDeleteEmployee = async (employeeId: string) => {
+    if (window.confirm('Are you sure you want to delete this employee?')) {
+      try {
+        const token = localStorage.getItem('admin_token');
+        if (!token) {
+          throw new Error('Authentication token not found');
+        }
+
+        const response = await fetch(`${API_BASE_URL}/api/admin/employees/${employeeId}`, {
+          method: 'DELETE',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          credentials: 'include'
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(result.message || 'Failed to delete employee');
+        }
+
+        if (result.success) {
+          setSuccess('Employee deleted successfully');
+          await fetchEmployees();
+        } else {
+          throw new Error(result.message || 'Failed to delete employee');
+        }
+      } catch (error: any) {
+        if (error.message.includes('Failed to fetch')) {
+          setError('Could not connect to server. Please check your internet connection.');
+        } else {
+          setError(error.message || 'Failed to delete employee');
+        }
+      }
+    }
   };
 
-  const handleAddStock = (product: Product) => {
-    setSelectedProduct(product);
-    setRestockQuantity('');
-    setShowRestockModal(true);
+  const totalPayroll = employees.reduce((sum, emp) => sum + Number(emp.base_salary || 0), 0);
+  const activeEmployees = employees.filter(e => e.is_active).length;
+
+  const getWorkShiftBadge = (shift: string) => {
+    const variants: { [key: string]: string } = {
+      day: 'primary',
+      night: 'dark',
+      both: 'warning'
+    };
+    const labels: { [key: string]: string } = {
+      day: 'Day',
+      night: 'Night',
+      both: 'Both'
+    };
+    return <Badge bg={variants[shift] || 'secondary'} className="small">{labels[shift] || shift}</Badge>;
   };
-
-  const lowStockProducts = products.filter(product => product.status === 'low_stock');
-  const outOfStockProducts = products.filter(product => product.status === 'out_of_stock');
-
-  const totalInventoryValue = products.reduce((sum, product) => 
-    sum + (product.cost_price * product.current_stock), 0
-  );
 
   if (loading) {
     return (
-      <Container fluid className="px-3 px-sm-4">
+      <Container fluid className="px-3 py-4">
         <div className="text-center py-5">
           <div className="spinner-border text-primary" role="status">
             <span className="visually-hidden">Loading...</span>
           </div>
+          <p className="mt-3 text-muted">Loading employees...</p>
         </div>
       </Container>
     );
   }
 
   return (
-    <Container fluid className="fade-in px-3 px-sm-4 py-3">
-      {/* Header Section */}
-      <Row className="mb-4">
-        <Col>
-          <div className="d-flex justify-content-between align-items-center flex-wrap gap-3">
-            <div>
-              <h4 className="fw-bold mb-1">Inventory</h4>
-              <p className="text-muted mb-0">Track your product stock levels</p>
-            </div>
-            <div className="d-flex gap-2 align-items-center flex-wrap">
-              {/* View Mode Toggle */}
-              <div className="btn-group btn-group-sm" role="group">
-                <input
-                  type="radio"
-                  className="btn-check"
-                  name="viewMode"
-                  id="cardsView"
-                  checked={viewMode === 'cards'}
-                  onChange={() => setViewMode('cards')}
-                />
-                <label className="btn btn-outline-primary" htmlFor="cardsView">
-                  <Package size={14} />
-                </label>
-                <input
-                  type="radio"
-                  className="btn-check"
-                  name="viewMode"
-                  id="tableView"
-                  checked={viewMode === 'table'}
-                  onChange={() => setViewMode('table')}
-                />
-                <label className="btn btn-outline-primary" htmlFor="tableView">
-                  <Table size={14} />
-                </label>
-              </div>
-              
-              <Button variant="outline-primary" size="sm" onClick={fetchInventoryData}>
-                <RefreshCw size={16} />
-              </Button>
-              <Button variant="outline-primary" size="sm">
-                <Download size={16} />
-              </Button>
-            </div>
-          </div>
-        </Col>
-      </Row>
+    <Container fluid className="fade-in px-3 py-3">
+      <div className="d-flex justify-content-between align-items-center mb-3">
+        <div className="flex-grow-1">
+          <h4 className="fw-bold mb-1">Employee Management</h4>
+          <p className="text-muted small d-none d-sm-block">Manage your employees and their salaries</p>
+        </div>
+        <Button variant="primary" onClick={handleAddEmployee} size="sm">
+          <Plus size={16} className="me-1" />
+          <span className="d-none d-sm-inline">Add Employee</span>
+          <span className="d-sm-none">Add</span>
+        </Button>
+      </div>
 
-      {/* Alerts */}
       {error && (
-        <Alert variant="danger" dismissible onClose={() => setError('')} className="mb-4">
-          {error}
+        <Alert variant="danger" dismissible onClose={() => setError('')} className="small mb-3">
+          <div className="d-flex align-items-center">
+            <div className="flex-grow-1">
+              <strong>Error:</strong> {error}
+            </div>
+            <Button 
+              variant="outline-danger" 
+              size="sm" 
+              onClick={() => {
+                setError('');
+                fetchEmployees();
+              }}
+              className="ms-2"
+            >
+              Refresh
+            </Button>
+          </div>
         </Alert>
       )}
       {success && (
-        <Alert variant="success" dismissible onClose={() => setSuccess('')} className="mb-4">
+        <Alert variant="success" dismissible onClose={() => setSuccess('')} className="small mb-3">
           {success}
         </Alert>
       )}
 
-      {/* Stats Cards */}
-      <Row className="mb-4 g-3">
-        <Col xs={12} sm={6} lg={3}>
-          <MetricCard
-            title="Total Products"
-            value={products.length}
-            subtitle={`${categories.length} categories`}
-            icon={<Package className="text-primary" />}
-            variant="primary"
-          />
-        </Col>
-        <Col xs={12} sm={6} lg={3}>
-          <MetricCard
-            title="Inventory Value"
-            value={formatCurrency(totalInventoryValue)}
-            subtitle="Total stock value"
-            icon={<TrendingUp className="text-success" />}
-            variant="success"
-          />
-        </Col>
-        <Col xs={12} sm={6} lg={3}>
-          <Card className="dashboard-card h-100">
+      <Row className="g-3 mb-3">
+        <Col xs={6} sm={6} lg={3}>
+          <Card className="border-0 shadow-sm h-100">
             <Card.Body className="p-3">
               <div className="d-flex justify-content-between align-items-start">
                 <div>
-                  <p className="text-muted mb-1 small">Low Stock</p>
-                  <h6 className="mb-1 fw-bold">{lowStockProducts.length}</h6>
-                  <small className="text-muted">Need reorder</small>
+                  <p className="text-muted mb-1 small fw-semibold">Total Employees</p>
+                  <h4 className="mb-0 fw-bold text-dark">{employees.length}</h4>
                 </div>
-                <div className={`bg-${lowStockProducts.length > 0 ? 'warning' : 'success'} bg-opacity-10 p-2 rounded`}>
-                  {lowStockProducts.length > 0 ? (
-                    <AlertTriangle size={20} className="text-warning" />
-                  ) : (
-                    <CheckCircle size={20} className="text-success" />
-                  )}
+                <div className="bg-primary bg-opacity-10 p-2 rounded">
+                  <Users size={18} className="text-primary" />
                 </div>
               </div>
             </Card.Body>
           </Card>
         </Col>
-        <Col xs={12} sm={6} lg={3}>
-          <Card className="dashboard-card h-100">
+        <Col xs={6} sm={6} lg={3}>
+          <Card className="border-0 shadow-sm h-100">
             <Card.Body className="p-3">
               <div className="d-flex justify-content-between align-items-start">
                 <div>
-                  <p className="text-muted mb-1 small">Out of Stock</p>
-                  <h6 className="mb-1 fw-bold">{outOfStockProducts.length}</h6>
-                  <small className="text-muted">Not available</small>
+                  <p className="text-muted mb-1 small fw-semibold">Active Employees</p>
+                  <h4 className="mb-0 fw-bold text-dark">{activeEmployees}</h4>
                 </div>
-                <div className={`bg-${outOfStockProducts.length > 0 ? 'danger' : 'success'} bg-opacity-10 p-2 rounded`}>
-                  {outOfStockProducts.length > 0 ? (
-                    <Package size={20} className="text-danger" />
-                  ) : (
-                    <CheckCircle size={20} className="text-success" />
-                  )}
+                <div className="bg-success bg-opacity-10 p-2 rounded">
+                  <Users size={18} className="text-success" />
+                </div>
+              </div>
+            </Card.Body>
+          </Card>
+        </Col>
+        <Col xs={6} sm={6} lg={3}>
+          <Card className="border-0 shadow-sm h-100">
+            <Card.Body className="p-3">
+              <div className="d-flex justify-content-between align-items-start">
+                <div>
+                  <p className="text-muted mb-1 small fw-semibold">Monthly Payroll</p>
+                  <h4 className="mb-0 fw-bold text-dark">
+                    {formatCurrency(totalPayroll)}
+                  </h4>
+                </div>
+                <div className="bg-warning bg-opacity-10 p-2 rounded">
+                  <Users size={18} className="text-warning" />
+                </div>
+              </div>
+            </Card.Body>
+          </Card>
+        </Col>
+        <Col xs={6} sm={6} lg={3}>
+          <Card className="border-0 shadow-sm h-100">
+            <Card.Body className="p-3">
+              <div className="d-flex justify-content-between align-items-start">
+                <div>
+                  <p className="text-muted mb-1 small fw-semibold">Average Salary</p>
+                  <h4 className="mb-0 fw-bold text-dark">
+                    {formatCurrency(employees.length > 0 ? totalPayroll / employees.length : 0)}
+                  </h4>
+                </div>
+                <div className="bg-info bg-opacity-10 p-2 rounded">
+                  <Users size={18} className="text-info" />
                 </div>
               </div>
             </Card.Body>
@@ -553,397 +591,730 @@ export const Inventory: React.FC = () => {
         </Col>
       </Row>
 
-      {/* Search and Filters - Full Width */}
-      <Card className="mb-3">
-        <Card.Body className="py-3">
-          <Row className="g-2 align-items-end">
-            <Col md={4}>
-              <Form.Label className="small fw-semibold">Search</Form.Label>
-              <div className="position-relative">
-                <Search size={16} className="position-absolute top-50 start-3 translate-middle-y text-muted" />
-                <Form.Control
-                  type="text"
-                  placeholder="Search by product name or SKU..."
-                  value={searchTerm}
-                  onChange={(e) => {
-                    setSearchTerm(e.target.value);
-                    setCurrentPage(1); // Reset to first page when searching
-                  }}
-                  className="ps-5"
-                  size="sm"
-                />
-              </div>
-            </Col>
-            <Col md={3}>
-              <Form.Label className="small fw-semibold">Category</Form.Label>
-              <Form.Select 
-                size="sm"
-                value={selectedCategory}
-                onChange={(e) => {
-                  setSelectedCategory(e.target.value);
-                  setCurrentPage(1); // Reset to first page when filtering
-                }}
-              >
-                <option value="all">All Categories</option>
-                {Array.from(new Set(products.map(p => p.category))).map(category => (
-                  <option key={category} value={category}>{category}</option>
-                ))}
-              </Form.Select>
-            </Col>
-            <Col md={3}>
-              <Form.Label className="small fw-semibold">Status</Form.Label>
-              <Form.Select 
-                size="sm"
-                value={selectedStatus}
-                onChange={(e) => {
-                  setSelectedStatus(e.target.value);
-                  setCurrentPage(1); // Reset to first page when filtering
-                }}
-              >
-                <option value="all">All Statuses</option>
-                <option value="in_stock">In Stock</option>
-                <option value="low_stock">Low Stock</option>
-                <option value="out_of_stock">Out of Stock</option>
-              </Form.Select>
-            </Col>
-            <Col md={2}>
-              <div className="d-flex gap-2">
-                <Button variant="outline-secondary" size="sm" className="w-100">
-                  <Filter size={14} className="me-1" />
-                  Filter
-                </Button>
-              </div>
-            </Col>
-          </Row>
-        </Card.Body>
-      </Card>
-
-      {/* Low Stock Alerts */}
-      {lowStockProducts.length > 0 && (
-        <Card className="mb-3 border-warning">
-          <Card.Header className="bg-warning bg-opacity-10 py-2">
-            <div className="d-flex align-items-center">
-              <AlertTriangle size={16} className="text-warning me-2" />
-              <h6 className="mb-0 fw-semibold text-warning">Low Stock Alerts</h6>
-              <Badge bg="warning" className="ms-2">{lowStockProducts.length}</Badge>
-            </div>
-          </Card.Header>
-          <Card.Body className="p-0">
-            <div className="list-group list-group-flush">
-              {lowStockProducts.slice(0, 3).map(product => (
-                <div key={product.id} className="list-group-item d-flex justify-content-between align-items-center px-3 py-2">
-                  <div className="flex-grow-1">
-                    <div className="fw-semibold small">{product.name}</div>
-                    <small className="text-muted">
-                      {product.current_stock} / {product.min_stock} {product.unit_of_measure}
-                    </small>
-                  </div>
-                  <Button size="sm" variant="outline-warning" className="ms-2" onClick={() => handleAddStock(product)}>
-                    <Plus size={12} />
-                  </Button>
-                </div>
-              ))}
-            </div>
-          </Card.Body>
-        </Card>
-      )}
-
-      {/* Products Table - Full Width */}
-      <Card>
-        <Card.Header className="bg-white py-3">
+      <Card className="border-0 shadow-sm">
+        <Card.Header className="bg-white border-0 py-3">
           <div className="d-flex justify-content-between align-items-center">
-            <h6 className="mb-0 fw-semibold">Products List ({filteredProducts.length})</h6>
-            <div className="d-flex gap-2 align-items-center">
-              <small className="text-muted">
-                {viewMode === 'cards' ? 'Cards' : 'Table'} view
-              </small>
-              <Badge bg="light" text="dark" className="fs-7">
-                Page: {currentPage}/{totalPages}
-              </Badge>
+            <div>
+              <h6 className="mb-0 fw-semibold">All Employees</h6>
+              <small className="text-muted">Showing {employees.length} employees</small>
             </div>
+            <Button 
+              variant="outline-primary" 
+              onClick={handleAddEmployee} 
+              size="sm"
+              className="d-none d-sm-block"
+            >
+              <Plus size={14} className="me-1" />
+              Add Employee
+            </Button>
           </div>
         </Card.Header>
         <Card.Body className="p-0">
-          {filteredProducts.length === 0 ? (
-            <div className="text-center py-5">
-              <Package size={48} className="text-muted mb-3" />
-              <p className="text-muted">No products found</p>
-              <Button variant="outline-primary" size="sm">
-                Add New Product
+          {employees.length === 0 ? (
+            <div className="text-center py-5 px-3">
+              <Users size={48} className="text-muted mb-3" />
+              <h6 className="text-muted">No employees found</h6>
+              <p className="text-muted small mb-3">Start by adding your first employee</p>
+              <Button variant="primary" onClick={handleAddEmployee} size="sm">
+                <Plus size={14} className="me-1" />
+                Add Employee
               </Button>
             </div>
-          ) : viewMode === 'cards' ? (
-            /* Mobile Cards View */
-            <div className="list-group list-group-flush">
-              {currentProducts.map((product) => (
-                <div key={product.id} className="list-group-item p-2 border-bottom">
-                  <div className="d-flex align-items-start gap-2">
-                    <div className="bg-primary bg-opacity-10 rounded d-flex align-items-center justify-content-center flex-shrink-0" 
-                         style={{ width: '40px', height: '40px' }}>
-                      <Package size={16} className="text-primary" />
-                    </div>
-
-                    <div className="flex-grow-1">
-                      <div className="d-flex justify-content-between align-items-start mb-1">
-                        <h6 className="fw-semibold mb-0 small text-truncate" style={{ maxWidth: '120px' }}>
-                          {product.name}
-                        </h6>
-                        {getStockStatusBadge(product.status)}
-                      </div>
-                      
-                      <div className="mb-2">
-                        <small className="text-muted d-block">
-                          SKU: {product.sku || 'Not available'}
-                        </small>
-                      </div>
-
-                      <div className="row g-1 mb-2">
-                        <div className="col-6">
-                          <small className="text-muted d-block">Stock</small>
-                          <strong className="small">{product.current_stock} {product.unit_of_measure}</strong>
-                        </div>
-                        <div className="col-6">
-                          <small className="text-muted d-block">Price</small>
-                          <strong className="small text-success">{formatCurrency(product.selling_price)}</strong>
-                        </div>
-                      </div>
-
-                      <div className="d-flex justify-content-between align-items-center">
-                        <small className="text-muted">
-                          Value: {formatCurrency(product.cost_price * product.current_stock)}
-                        </small>
-                        <div className="d-flex gap-1">
-                          <Button 
-                            variant="outline-primary" 
-                            size="sm"
-                            className="p-1"
-                            onClick={() => handleViewProduct(product)}
-                            title="View"
-                          >
-                            <Eye size={12} />
-                          </Button>
-                          <Button 
-                            variant="outline-success" 
-                            size="sm"
-                            className="p-1"
-                            onClick={() => handleAddStock(product)}
-                            title="Restock"
-                          >
-                            <Plus size={12} />
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
           ) : (
-            /* Desktop Table View - Full Width */
-            <>
-              <div className="table-responsive" style={{ maxHeight: 'calc(100vh - 300px)', overflowY: 'auto' }}>
-                <Table hover className="mb-0" style={{ minWidth: '1000px' }}>
-                  <thead className="bg-light position-sticky top-0">
-                    <tr>
-                      <th style={{ width: '25%' }}>Product Name</th>
-                      <th style={{ width: '10%' }}>SKU</th>
-                      <th style={{ width: '10%' }}>Category</th>
-                      <th style={{ width: '8%' }}>Stock</th>
-                      <th style={{ width: '8%' }}>Min. Stock</th>
-                      <th style={{ width: '10%' }}>Status</th>
-                      <th style={{ width: '10%' }}>Selling Price</th>
-                      <th style={{ width: '12%' }}>Stock Value</th>
-                      <th style={{ width: '7%' }} className="text-center">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {currentProducts.map((product) => (
-                      <tr key={product.id} className="align-middle">
-                        <td>
-                          <div className="d-flex align-items-center">
-                            <div className="bg-primary bg-opacity-10 rounded d-flex align-items-center justify-content-center me-2" 
-                                 style={{ width: '32px', height: '32px' }}>
-                              <Package size={14} className="text-primary" />
-                            </div>
-                            <div>
-                              <div className="fw-semibold small">{product.name}</div>
-                              <small className="text-muted">{product.supplier}</small>
+            <div className="table-responsive">
+              <Table hover className="mb-0">
+                <thead className="bg-light">
+                  <tr>
+                    <th className="small fw-semibold">Employee</th>
+                    <th className="small fw-semibold d-none d-md-table-cell">Department</th>
+                    <th className="small fw-semibold d-none d-sm-table-cell">Position</th>
+                    <th className="small fw-semibold d-none d-lg-table-cell">Salary</th>
+                    <th className="small fw-semibold d-none d-xl-table-cell">Status</th>
+                    <th className="small fw-semibold text-end">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {employees.map((employee) => (
+                    <tr key={employee.id}>
+                      <td>
+                        <div className="d-flex align-items-center">
+                          <div className="flex-shrink-0">
+                            <div className="bg-primary bg-opacity-10 rounded-circle d-flex align-items-center justify-content-center" 
+                                 style={{ width: '40px', height: '40px' }}>
+                              <Users size={16} className="text-primary" />
                             </div>
                           </div>
-                        </td>
-                        <td>
-                          <code className="small bg-light px-1 rounded">{product.sku || '-'}</code>
-                        </td>
-                        <td>
-                          <Badge bg="outline-secondary" className="text-dark border small">
-                            {product.category}
-                          </Badge>
-                        </td>
-                        <td>
-                          <div>
-                            <strong className="small">{product.current_stock}</strong>
-                            <small className="text-muted d-block">{product.unit_of_measure}</small>
+                          <div className="flex-grow-1 ms-3">
+                            <div className="fw-semibold small">
+                              {employee.first_name} {employee.last_name}
+                            </div>
+                            <div className="text-muted small">
+                              {employee.phone || 'No phone number'}
+                            </div>
+                            <div className="d-block d-md-none">
+                              <Badge bg="info" className="small me-1">
+                                {employee.work_hours_per_day} hours
+                              </Badge>
+                              {getWorkShiftBadge(employee.work_shift || 'day')}
+                            </div>
                           </div>
-                        </td>
-                        <td>
-                          <small className="text-muted">{product.min_stock}</small>
-                        </td>
-                        <td>{getStockStatusBadge(product.status)}</td>
-                        <td className="text-success fw-semibold">{formatCurrency(product.selling_price)}</td>
-                        <td className="fw-semibold">{formatCurrency(product.cost_price * product.current_stock)}</td>
-                        <td>
-                          <div className="d-flex gap-1 justify-content-center">
+                        </div>
+                      </td>
+                      <td className="d-none d-md-table-cell">
+                        <span className="small">{employee.department}</span>
+                      </td>
+                      <td className="d-none d-sm-table-cell">
+                        <span className="small">{employee.position}</span>
+                      </td>
+                      <td className="d-none d-lg-table-cell">
+                        <span className="fw-semibold small text-success">
+                          {formatCurrency(Number(employee.base_salary || 0))}
+                        </span>
+                      </td>
+                      <td className="d-none d-xl-table-cell">
+                        <Badge bg={employee.is_active ? 'success' : 'danger'} className="small">
+                          {employee.is_active ? 'Active' : 'Inactive'}
+                        </Badge>
+                      </td>
+                      <td>
+                        <div className="d-flex justify-content-end gap-1">
+                          <Dropdown className="d-block d-xl-none">
+                            <Dropdown.Toggle variant="outline-secondary" size="sm" className="border-0">
+                              <MoreVertical size={14} />
+                            </Dropdown.Toggle>
+                            <Dropdown.Menu align="end">
+                              <Dropdown.Item onClick={() => handleViewEmployee(employee)}>
+                                <Eye size={14} className="me-2" />
+                                View
+                              </Dropdown.Item>
+                              <Dropdown.Item onClick={() => handleEditEmployee(employee)}>
+                                <Edit size={14} className="me-2" />
+                                Edit
+                              </Dropdown.Item>
+                              <Dropdown.Divider />
+                              <Dropdown.Item 
+                                onClick={() => handleDeleteEmployee(employee.id)}
+                                className="text-danger"
+                              >
+                                <Trash2 size={14} className="me-2" />
+                                Delete
+                              </Dropdown.Item>
+                            </Dropdown.Menu>
+                          </Dropdown>
+
+                          <div className="d-none d-xl-flex gap-1">
                             <Button 
                               variant="outline-primary" 
                               size="sm"
-                              className="p-1"
-                              onClick={() => handleViewProduct(product)}
-                              title="View"
+                              onClick={() => handleViewEmployee(employee)}
+                              title="View employee details"
                             >
-                              <Eye size={12} />
+                              <Eye size={14} />
                             </Button>
                             <Button 
-                              variant="outline-success" 
+                              variant="outline-warning" 
                               size="sm"
-                              className="p-1"
-                              onClick={() => handleAddStock(product)}
-                              title="Restock"
-                              disabled={product.status === 'out_of_stock'}
+                              onClick={() => handleEditEmployee(employee)}
+                              title="Edit employee"
                             >
-                              <Plus size={12} />
+                              <Edit size={14} />
+                            </Button>
+                            <Button 
+                              variant="outline-danger" 
+                              size="sm"
+                              onClick={() => handleDeleteEmployee(employee.id)}
+                              title="Delete employee"
+                            >
+                              <Trash2 size={14} />
                             </Button>
                           </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </Table>
-              </div>
-              {renderPagination()}
-            </>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            </div>
           )}
         </Card.Body>
-        {/* Add pagination for cards view too */}
-        {viewMode === 'cards' && filteredProducts.length > itemsPerPage && renderPagination()}
       </Card>
 
-      {/* Product Details Modal */}
-      <Modal show={showProductModal} onHide={() => setShowProductModal(false)} centered scrollable size="lg">
-        <Modal.Header closeButton className="py-3">
-          <Modal.Title className="h6">{selectedProduct?.name}</Modal.Title>
+      <Modal show={showModal} onHide={() => setShowModal(false)} size="lg" centered>
+        <Modal.Header closeButton className="px-3 py-2">
+          <Modal.Title className="h6 mb-0">Add New Employee</Modal.Title>
         </Modal.Header>
-        <Modal.Body className="py-3">
-          {selectedProduct && (
-            <Row className="g-3">
-              <Col md={6}>
-                <h6 className="text-muted border-bottom pb-2 small">Product Information</h6>
-                <div className="mb-2">
-                  <small className="text-muted d-block">Name</small>
-                  <strong>{selectedProduct.name}</strong>
-                </div>
-                <div className="mb-2">
-                  <small className="text-muted d-block">SKU</small>
-                  <code className="small">{selectedProduct.sku || 'Not available'}</code>
-                </div>
-                <div className="mb-2">
-                  <small className="text-muted d-block">Category</small>
-                  <strong className="small">{selectedProduct.category}</strong>
-                </div>
-                <div className="mb-2">
-                  <small className="text-muted d-block">Supplier</small>
-                  <strong className="small">{selectedProduct.supplier}</strong>
-                </div>
+        <Form onSubmit={handleSubmit}>
+          <Modal.Body className="p-3">
+            <Row className="g-2">
+              <Col xs={12} sm={6}>
+                <Form.Group className="mb-2">
+                  <Form.Label className="small fw-semibold">First Name *</Form.Label>
+                  <Form.Control
+                    type="text"
+                    name="first_name"
+                    value={formData.first_name}
+                    onChange={handleInputChange}
+                    required
+                    placeholder="Enter first name"
+                    size="sm"
+                    isInvalid={!!formErrors.first_name}
+                  />
+                  <Form.Control.Feedback type="invalid">
+                    {formErrors.first_name}
+                  </Form.Control.Feedback>
+                </Form.Group>
               </Col>
-              <Col md={6}>
-                <h6 className="text-muted border-bottom pb-2 small">Stock Information</h6>
-                <div className="mb-2">
-                  <small className="text-muted d-block">Current Stock</small>
-                  <strong className="small">{selectedProduct.current_stock} {selectedProduct.unit_of_measure}</strong>
-                </div>
-                <div className="mb-2">
-                  <small className="text-muted d-block">Minimum Stock</small>
-                  <strong className="small">{selectedProduct.min_stock} {selectedProduct.unit_of_measure}</strong>
-                </div>
-                <div className="mb-2">
-                  <small className="text-muted d-block">Cost Price</small>
-                  <strong className="small">{formatCurrency(selectedProduct.cost_price)}</strong>
-                </div>
-                <div className="mb-2">
-                  <small className="text-muted d-block">Selling Price</small>
-                  <strong className="small text-success">{formatCurrency(selectedProduct.selling_price)}</strong>
-                </div>
-                <div className="mb-2">
-                  <small className="text-muted d-block">Profit Margin</small>
-                  <strong className="small text-primary">
-                    {calculations.formatPercentage(
-                      ((selectedProduct.selling_price - selectedProduct.cost_price) / selectedProduct.selling_price) * 100
-                    )}
-                  </strong>
-                </div>
-                <div>
-                  <small className="text-muted d-block">Stock Status</small>
-                  {getStockStatusBadge(selectedProduct.status)}
-                </div>
+              <Col xs={12} sm={6}>
+                <Form.Group className="mb-2">
+                  <Form.Label className="small fw-semibold">Last Name *</Form.Label>
+                  <Form.Control
+                    type="text"
+                    name="last_name"
+                    value={formData.last_name}
+                    onChange={handleInputChange}
+                    required
+                    placeholder="Enter last name"
+                    size="sm"
+                    isInvalid={!!formErrors.last_name}
+                  />
+                  <Form.Control.Feedback type="invalid">
+                    {formErrors.last_name}
+                  </Form.Control.Feedback>
+                </Form.Group>
               </Col>
             </Row>
-          )}
-        </Modal.Body>
-        <Modal.Footer className="py-3">
-          <Button variant="secondary" size="sm" onClick={() => setShowProductModal(false)}>
-            Close
-          </Button>
-          <Button variant="success" size="sm" onClick={() => handleAddStock(selectedProduct!)}>
-            <Plus size={14} className="me-1" />
-            Add Stock
-          </Button>
-        </Modal.Footer>
+
+            <Row className="g-2">
+              <Col xs={12} sm={6}>
+                <Form.Group className="mb-2">
+                  <Form.Label className="small fw-semibold">Phone</Form.Label>
+                  <Form.Control
+                    type="tel"
+                    name="phone"
+                    value={formData.phone}
+                    onChange={handleInputChange}
+                    placeholder="Enter phone number (optional)"
+                    size="sm"
+                  />
+                </Form.Group>
+              </Col>
+            </Row>
+
+            <Row className="g-2">
+              <Col xs={12} sm={6}>
+                <Form.Group className="mb-2">
+                  <Form.Label className="small fw-semibold">Position *</Form.Label>
+                  <Form.Control
+                    type="text"
+                    name="position"
+                    value={formData.position}
+                    onChange={handleInputChange}
+                    required
+                    placeholder="Enter position"
+                    size="sm"
+                    isInvalid={!!formErrors.position}
+                  />
+                  <Form.Control.Feedback type="invalid">
+                    {formErrors.position}
+                  </Form.Control.Feedback>
+                </Form.Group>
+              </Col>
+              <Col xs={12} sm={6}>
+                <Form.Group className="mb-2">
+                  <Form.Label className="small fw-semibold">Department *</Form.Label>
+                  <Form.Control
+                    type="text"
+                    name="department"
+                    value={formData.department}
+                    onChange={handleInputChange}
+                    required
+                    placeholder="Enter department"
+                    size="sm"
+                    isInvalid={!!formErrors.department}
+                  />
+                  <Form.Control.Feedback type="invalid">
+                    {formErrors.department}
+                  </Form.Control.Feedback>
+                </Form.Group>
+              </Col>
+            </Row>
+
+            <Row className="g-2">
+              <Col xs={12} sm={6}>
+                <Form.Group className="mb-2">
+                  <Form.Label className="small fw-semibold">Base Salary ($) *</Form.Label>
+                  <Form.Control
+                    type="number"
+                    name="base_salary"
+                    value={formData.base_salary}
+                    onChange={handleInputChange}
+                    required
+                    placeholder="0"
+                    step="1"
+                    min="0"
+                    size="sm"
+                    isInvalid={!!formErrors.base_salary}
+                  />
+                  <Form.Control.Feedback type="invalid">
+                    {formErrors.base_salary}
+                  </Form.Control.Feedback>
+                  <Form.Text className="text-muted">
+                    Monthly salary in USD
+                  </Form.Text>
+                </Form.Group>
+              </Col>
+              <Col xs={6} sm={3}>
+                <Form.Group className="mb-2">
+                  <Form.Label className="small fw-semibold">Work Hours *</Form.Label>
+                  <Form.Control
+                    type="number"
+                    name="work_hours_per_day"
+                    value={formData.work_hours_per_day}
+                    onChange={handleInputChange}
+                    required
+                    min="1"
+                    max="24"
+                    placeholder="8"
+                    size="sm"
+                    isInvalid={!!formErrors.work_hours_per_day}
+                  />
+                  <Form.Control.Feedback type="invalid">
+                    {formErrors.work_hours_per_day}
+                  </Form.Control.Feedback>
+                </Form.Group>
+              </Col>
+              <Col xs={6} sm={3}>
+                <Form.Group className="mb-2">
+                  <Form.Label className="small fw-semibold">Work Shift</Form.Label>
+                  <Form.Select
+                    name="work_shift"
+                    value={formData.work_shift}
+                    onChange={handleInputChange}
+                    size="sm"
+                  >
+                    <option value="day">Day</option>
+                    <option value="night">Night</option>
+                    <option value="both">Both</option>
+                  </Form.Select>
+                </Form.Group>
+              </Col>
+            </Row>
+
+            <Row className="g-2">
+              <Col xs={12} sm={6}>
+                <Form.Group className="mb-2">
+                  <Form.Label className="small fw-semibold">Employment Type</Form.Label>
+                  <Form.Select
+                    name="employment_type"
+                    value={formData.employment_type}
+                    onChange={handleInputChange}
+                    size="sm"
+                  >
+                    <option value="full_time">Full Time</option>
+                    <option value="part_time">Part Time</option>
+                    <option value="contract">Contract</option>
+                    <option value="temporary">Temporary</option>
+                  </Form.Select>
+                </Form.Group>
+              </Col>
+              <Col xs={12} sm={6}>
+                <Form.Group className="mb-2">
+                  <Form.Label className="small fw-semibold">Hire Date</Form.Label>
+                  <Form.Control
+                    type="date"
+                    name="hire_date"
+                    value={formData.hire_date}
+                    onChange={handleInputChange}
+                    size="sm"
+                    isInvalid={!!formErrors.hire_date}
+                  />
+                  <Form.Control.Feedback type="invalid">
+                    {formErrors.hire_date}
+                  </Form.Control.Feedback>
+                </Form.Group>
+              </Col>
+            </Row>
+
+            <Row className="g-2">
+              <Col xs={12} sm={6}>
+                <Form.Group className="mb-2">
+                  <Form.Label className="small fw-semibold">Date of Birth</Form.Label>
+                  <Form.Control
+                    type="date"
+                    name="date_of_birth"
+                    value={formData.date_of_birth}
+                    onChange={handleInputChange}
+                    size="sm"
+                    isInvalid={!!formErrors.date_of_birth}
+                  />
+                  <Form.Control.Feedback type="invalid">
+                    {formErrors.date_of_birth}
+                  </Form.Control.Feedback>
+                </Form.Group>
+              </Col>
+            </Row>
+
+            <Form.Group className="mb-2">
+              <Form.Label className="small fw-semibold">Address</Form.Label>
+              <Form.Control
+                as="textarea"
+                rows={2}
+                name="address"
+                value={formData.address}
+                onChange={handleInputChange}
+                placeholder="Enter address (optional)"
+                size="sm"
+              />
+            </Form.Group>
+          </Modal.Body>
+          <Modal.Footer className="px-3 py-2">
+            <Button variant="secondary" onClick={() => setShowModal(false)} size="sm">
+              Cancel
+            </Button>
+            <Button variant="primary" type="submit" size="sm">
+              Add Employee
+            </Button>
+          </Modal.Footer>
+        </Form>
       </Modal>
 
-      {/* Restock Modal */}
-      <Modal show={showRestockModal} onHide={() => setShowRestockModal(false)} centered>
-        <Modal.Header closeButton className="py-3">
-          <Modal.Title className="h6">Restock Product</Modal.Title>
+      <Modal show={showEditModal} onHide={() => setShowEditModal(false)} size="lg" centered>
+        <Modal.Header closeButton className="px-3 py-2">
+          <Modal.Title className="h6 mb-0">Edit Employee</Modal.Title>
         </Modal.Header>
-        <Modal.Body className="py-3">
-          {selectedProduct && (
+        <Form onSubmit={handleUpdateEmployee}>
+          <Modal.Body className="p-3">
+            <Row className="g-2">
+              <Col xs={12} sm={6}>
+                <Form.Group className="mb-2">
+                  <Form.Label className="small fw-semibold">First Name *</Form.Label>
+                  <Form.Control
+                    type="text"
+                    name="first_name"
+                    value={formData.first_name}
+                    onChange={handleInputChange}
+                    required
+                    placeholder="Enter first name"
+                    size="sm"
+                    isInvalid={!!formErrors.first_name}
+                  />
+                  <Form.Control.Feedback type="invalid">
+                    {formErrors.first_name}
+                  </Form.Control.Feedback>
+                </Form.Group>
+              </Col>
+              <Col xs={12} sm={6}>
+                <Form.Group className="mb-2">
+                  <Form.Label className="small fw-semibold">Last Name *</Form.Label>
+                  <Form.Control
+                    type="text"
+                    name="last_name"
+                    value={formData.last_name}
+                    onChange={handleInputChange}
+                    required
+                    placeholder="Enter last name"
+                    size="sm"
+                    isInvalid={!!formErrors.last_name}
+                  />
+                  <Form.Control.Feedback type="invalid">
+                    {formErrors.last_name}
+                  </Form.Control.Feedback>
+                </Form.Group>
+              </Col>
+            </Row>
+
+            <Row className="g-2">
+              <Col xs={12} sm={6}>
+                <Form.Group className="mb-2">
+                  <Form.Label className="small fw-semibold">Phone</Form.Label>
+                  <Form.Control
+                    type="tel"
+                    name="phone"
+                    value={formData.phone}
+                    onChange={handleInputChange}
+                    placeholder="Enter phone number (optional)"
+                    size="sm"
+                  />
+                </Form.Group>
+              </Col>
+            </Row>
+
+            <Row className="g-2">
+              <Col xs={12} sm={6}>
+                <Form.Group className="mb-2">
+                  <Form.Label className="small fw-semibold">Position *</Form.Label>
+                  <Form.Control
+                    type="text"
+                    name="position"
+                    value={formData.position}
+                    onChange={handleInputChange}
+                    required
+                    placeholder="Enter position"
+                    size="sm"
+                    isInvalid={!!formErrors.position}
+                  />
+                  <Form.Control.Feedback type="invalid">
+                    {formErrors.position}
+                  </Form.Control.Feedback>
+                </Form.Group>
+              </Col>
+              <Col xs={12} sm={6}>
+                <Form.Group className="mb-2">
+                  <Form.Label className="small fw-semibold">Department *</Form.Label>
+                  <Form.Control
+                    type="text"
+                    name="department"
+                    value={formData.department}
+                    onChange={handleInputChange}
+                    required
+                    placeholder="Enter department"
+                    size="sm"
+                    isInvalid={!!formErrors.department}
+                  />
+                  <Form.Control.Feedback type="invalid">
+                    {formErrors.department}
+                  </Form.Control.Feedback>
+                </Form.Group>
+              </Col>
+            </Row>
+
+            <Row className="g-2">
+              <Col xs={12} sm={6}>
+                <Form.Group className="mb-2">
+                  <Form.Label className="small fw-semibold">Base Salary ($) *</Form.Label>
+                  <Form.Control
+                    type="number"
+                    name="base_salary"
+                    value={formData.base_salary}
+                    onChange={handleInputChange}
+                    required
+                    placeholder="0"
+                    step="1"
+                    min="0"
+                    size="sm"
+                    isInvalid={!!formErrors.base_salary}
+                  />
+                  <Form.Control.Feedback type="invalid">
+                    {formErrors.base_salary}
+                  </Form.Control.Feedback>
+                  <Form.Text className="text-muted">
+                    Monthly salary in USD
+                  </Form.Text>
+                </Form.Group>
+              </Col>
+              <Col xs={6} sm={3}>
+                <Form.Group className="mb-2">
+                  <Form.Label className="small fw-semibold">Work Hours *</Form.Label>
+                  <Form.Control
+                    type="number"
+                    name="work_hours_per_day"
+                    value={formData.work_hours_per_day}
+                    onChange={handleInputChange}
+                    required
+                    min="1"
+                    max="24"
+                    placeholder="8"
+                    size="sm"
+                    isInvalid={!!formErrors.work_hours_per_day}
+                  />
+                  <Form.Control.Feedback type="invalid">
+                    {formErrors.work_hours_per_day}
+                  </Form.Control.Feedback>
+                </Form.Group>
+              </Col>
+              <Col xs={6} sm={3}>
+                <Form.Group className="mb-2">
+                  <Form.Label className="small fw-semibold">Work Shift</Form.Label>
+                  <Form.Select
+                    name="work_shift"
+                    value={formData.work_shift}
+                    onChange={handleInputChange}
+                    size="sm"
+                  >
+                    <option value="day">Day</option>
+                    <option value="night">Night</option>
+                    <option value="both">Both</option>
+                  </Form.Select>
+                </Form.Group>
+              </Col>
+            </Row>
+
+            <Row className="g-2">
+              <Col xs={12} sm={6}>
+                <Form.Group className="mb-2">
+                  <Form.Label className="small fw-semibold">Employment Type</Form.Label>
+                  <Form.Select
+                    name="employment_type"
+                    value={formData.employment_type}
+                    onChange={handleInputChange}
+                    size="sm"
+                  >
+                    <option value="full_time">Full Time</option>
+                    <option value="part_time">Part Time</option>
+                    <option value="contract">Contract</option>
+                    <option value="temporary">Temporary</option>
+                  </Form.Select>
+                </Form.Group>
+              </Col>
+              <Col xs={12} sm={6}>
+                <Form.Group className="mb-2">
+                  <Form.Label className="small fw-semibold">Hire Date</Form.Label>
+                  <Form.Control
+                    type="date"
+                    name="hire_date"
+                    value={formData.hire_date}
+                    onChange={handleInputChange}
+                    size="sm"
+                    isInvalid={!!formErrors.hire_date}
+                  />
+                  <Form.Control.Feedback type="invalid">
+                    {formErrors.hire_date}
+                  </Form.Control.Feedback>
+                </Form.Group>
+              </Col>
+            </Row>
+
+            <Row className="g-2">
+              <Col xs={12} sm={6}>
+                <Form.Group className="mb-2">
+                  <Form.Label className="small fw-semibold">Date of Birth</Form.Label>
+                  <Form.Control
+                    type="date"
+                    name="date_of_birth"
+                    value={formData.date_of_birth}
+                    onChange={handleInputChange}
+                    size="sm"
+                    isInvalid={!!formErrors.date_of_birth}
+                  />
+                  <Form.Control.Feedback type="invalid">
+                    {formErrors.date_of_birth}
+                  </Form.Control.Feedback>
+                </Form.Group>
+              </Col>
+              <Col xs={12} sm={6}>
+                <Form.Group className="mb-2">
+                  <Form.Label className="small fw-semibold">Status</Form.Label>
+                  <Form.Select
+                    name="is_active"
+                    value={formData.is_active.toString()}
+                    onChange={handleInputChange}
+                    size="sm"
+                  >
+                    <option value="true">Active</option>
+                    <option value="false">Inactive</option>
+                  </Form.Select>
+                </Form.Group>
+              </Col>
+            </Row>
+
+            <Form.Group className="mb-2">
+              <Form.Label className="small fw-semibold">Address</Form.Label>
+              <Form.Control
+                as="textarea"
+                rows={2}
+                name="address"
+                value={formData.address}
+                onChange={handleInputChange}
+                placeholder="Enter address (optional)"
+                size="sm"
+              />
+            </Form.Group>
+          </Modal.Body>
+          <Modal.Footer className="px-3 py-2">
+            <Button variant="secondary" onClick={() => setShowEditModal(false)} size="sm">
+              Cancel
+            </Button>
+            <Button variant="primary" type="submit" size="sm">
+              Update
+            </Button>
+          </Modal.Footer>
+        </Form>
+      </Modal>
+
+      <Modal show={showViewModal} onHide={() => setShowViewModal(false)} size="lg" centered>
+        <Modal.Header closeButton className="px-3 py-2">
+          <Modal.Title className="h6 mb-0">Employee Details</Modal.Title>
+        </Modal.Header>
+        <Modal.Body className="p-3">
+          {selectedEmployee && (
             <>
-              <div className="mb-3">
-                <small className="text-muted d-block">Product</small>
-                <strong className="small">{selectedProduct.name}</strong>
-              </div>
-              <div className="mb-3">
-                <small className="text-muted d-block">Current Stock</small>
-                <strong className="small">{selectedProduct.current_stock} {selectedProduct.unit_of_measure}</strong>
-              </div>
-              <Form.Group>
-                <Form.Label className="small fw-semibold">Quantity to Add *</Form.Label>
-                <Form.Control
-                  type="number"
-                  value={restockQuantity}
-                  onChange={(e) => setRestockQuantity(e.target.value)}
-                  placeholder="Enter quantity"
-                  min="1"
-                  size="sm"
-                />
-              </Form.Group>
-              {restockQuantity && (
-                <div className="mt-3 p-2 bg-light rounded">
-                  <small className="text-muted d-block">New Stock Level:</small>
-                  <strong className="text-success small">
-                    {selectedProduct.current_stock + parseInt(restockQuantity)} {selectedProduct.unit_of_measure}
-                  </strong>
-                </div>
-              )}
+              <Row className="mb-3">
+                <Col xs={8}>
+                  <h6 className="fw-bold mb-2">
+                    {selectedEmployee.first_name} {selectedEmployee.last_name}
+                  </h6>
+                  {selectedEmployee.phone && (
+                    <p className="text-muted small mb-1">
+                      <Phone size={14} className="me-2" />
+                      {selectedEmployee.phone}
+                    </p>
+                  )}
+                  {selectedEmployee.address && (
+                    <p className="text-muted small mb-0">
+                      <MapPin size={14} className="me-2" />
+                      {selectedEmployee.address}
+                    </p>
+                  )}
+                </Col>
+                <Col xs={4} className="text-end">
+                  <Badge bg={selectedEmployee.is_active ? 'success' : 'danger'} className="small mb-2">
+                    {selectedEmployee.is_active ? 'Active' : 'Inactive'}
+                  </Badge>
+                  <div>
+                    <small className="text-muted">ID:</small>
+                    <div className="fw-bold small">{selectedEmployee.employee_code}</div>
+                  </div>
+                </Col>
+              </Row>
+
+              <Row>
+                <Col xs={12} sm={6}>
+                  <h6 className="text-muted small mb-2">Work Details</h6>
+                  <div className="mb-2">
+                    <strong className="small">Position:</strong>
+                    <div className="small">{selectedEmployee.position}</div>
+                  </div>
+                  <div className="mb-2">
+                    <strong className="small">Department:</strong>
+                    <div className="small">{selectedEmployee.department}</div>
+                  </div>
+                  <div className="mb-2">
+                    <strong className="small">Work Hours:</strong>
+                    <div className="small"><Badge bg="info" className="small">{(selectedEmployee as any).work_hours_per_day} hours</Badge></div>
+                  </div>
+                  <div className="mb-2">
+                    <strong className="small">Work Shift:</strong>
+                    <div className="small">{getWorkShiftBadge((selectedEmployee as any).work_shift)}</div>
+                  </div>
+                  <div className="mb-2">
+                    <strong className="small">Base Salary:</strong>
+                    <div className="fw-semibold small text-success">
+                      {formatCurrency(Number(selectedEmployee.base_salary || 0))}
+                    </div>
+                  </div>
+                  {selectedEmployee.hire_date && (
+                    <div className="mb-2">
+                      <strong className="small">Hire Date:</strong>
+                      <div className="small">{new Date(selectedEmployee.hire_date).toLocaleDateString()}</div>
+                    </div>
+                  )}
+                </Col>
+                <Col xs={12} sm={6}>
+                  <h6 className="text-muted small mb-2">Personal Information</h6>
+                  {selectedEmployee.date_of_birth && (
+                    <div className="mb-2">
+                      <strong className="small">Date of Birth:</strong>
+                      <div className="small">{new Date(selectedEmployee.date_of_birth).toLocaleDateString()}</div>
+                    </div>
+                  )}
+                </Col>
+              </Row>
             </>
           )}
         </Modal.Body>
-        <Modal.Footer className="py-3">
-          <Button variant="outline-secondary" size="sm" onClick={() => setShowRestockModal(false)}>
-            Cancel
-          </Button>
-          <Button variant="primary" size="sm" onClick={handleRestock} disabled={!restockQuantity}>
-            <Plus size={14} className="me-1" />
-            Restock
+        <Modal.Footer className="px-3 py-2">
+          <Button variant="secondary" onClick={() => setShowViewModal(false)} size="sm">
+            Close
           </Button>
         </Modal.Footer>
       </Modal>

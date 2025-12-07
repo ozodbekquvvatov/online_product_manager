@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import * as React from 'react';
+import { useEffect, useState } from 'react';
 import { Container, Row, Col, Card, Table, Button, Badge, Modal, Form, Alert, Dropdown } from 'react-bootstrap';
 import { Users, Plus, Eye, Edit, Trash2, Mail, Phone, MapPin, MoreVertical } from 'lucide-react';
 import type { Employee } from '../../types/database.types';
@@ -413,7 +414,7 @@ export const Employees: React.FC = () => {
     }
   };
 
-  const handleDeleteEmployee = async (employeeId: number) => {
+  const handleDeleteEmployee = async (employeeId: string) => {
     if (window.confirm('Are you sure you want to delete this employee?')) {
       try {
         const token = localStorage.getItem('admin_token');
@@ -654,7 +655,7 @@ export const Employees: React.FC = () => {
                               <Badge bg="info" className="small me-1">
                                 {employee.work_hours_per_day} hours
                               </Badge>
-                              {getWorkShiftBadge(employee.work_shift)}
+                              {getWorkShiftBadge(employee.work_shift || 'day')}
                             </div>
                           </div>
                         </div>

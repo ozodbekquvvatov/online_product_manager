@@ -24,7 +24,6 @@ export const AdminLayout: React.FC = () => {
       // Navigate to login page after logout
       navigate('/login');
     } catch (error) {
-      console.error('Error during logout process:', error);
       // Even if there's an error, still navigate to login
       // since local state is cleared anyway
       navigate('/login');

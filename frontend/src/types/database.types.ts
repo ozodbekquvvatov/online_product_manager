@@ -28,6 +28,8 @@ export interface Employee {
   hourly_rate: number;
   commission_rate: number;
   overtime_rate: number;
+  work_hours_per_day?: number;
+  work_shift?: 'day' | 'night' | 'flexible';
   bank_account?: string;
   tax_id?: string;
   emergency_contact?: string;

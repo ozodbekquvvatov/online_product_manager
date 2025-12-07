@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import * as React from 'react';
+import { useEffect, useState } from 'react';
 import { Container, Row, Col, Card, Table, Button, Badge, Form, Modal, InputGroup, Alert, Pagination } from 'react-bootstrap';
 import {
   ShoppingCart,
@@ -22,6 +23,13 @@ import {
 } from 'lucide-react';
 import { useBusinessCalculations } from '../../hooks/useBusinessCalculations';
 import axios from 'axios';
+
+interface ApiResponse {
+  success: boolean;
+  data?: unknown;
+  products?: unknown;
+  message?: string;
+}
 
 interface Sale {
   id: number;
@@ -158,13 +166,14 @@ export const Sales: React.FC = () => {
           timeout: 10000
         });
         
-        if (productsResponse.data.success) {
-          const productsData = productsResponse.data.data || productsResponse.data.products || [];
-          setProducts(productsData);
+        const productsData = productsResponse.data as ApiResponse;
+        if (productsData.success) {
+          const products = (productsData.data || productsData.products || []) as Product[];
+          setProducts(products);
         } else {
           setProducts([]);
         }
-      } catch (productsError: any) {
+      } catch {
         setProducts([]);
       }
 
@@ -177,8 +186,9 @@ export const Sales: React.FC = () => {
         timeout: 10000
       });
 
-      if (salesResponse.data.success && salesResponse.data.data) {
-        setSales(salesResponse.data.data);
+      const salesData = salesResponse.data as ApiResponse;
+      if (salesData.success && salesData.data) {
+        setSales(salesData.data as Sale[]);
       } else {
         setSales([]);
       }
@@ -193,10 +203,11 @@ export const Sales: React.FC = () => {
           timeout: 5000
         });
 
-        if (statsResponse.data.success && statsResponse.data.data) {
-          setStats(statsResponse.data.data);
+        const statsData = statsResponse.data as ApiResponse;
+        if (statsData.success && statsData.data) {
+          setStats(statsData.data as SalesStats);
         }
-      } catch (statsError) {
+      } catch {
         // Silently ignore stats error, use calculated stats
       }
 
@@ -321,15 +332,17 @@ export const Sales: React.FC = () => {
           }
         );
 
-        if (response.data.success) {
+        const responseData = response.data as ApiResponse;
+        if (responseData.success) {
           setSuccess('Sale deleted successfully');
           fetchSalesData();
           setCurrentPage(1);
         } else {
-          throw new Error(response.data.message || 'Failed to delete sale');
+          throw new Error(responseData.message || 'Failed to delete sale');
         }
-      } catch (error: any) {
-        setError(error.response?.data?.message || error.message || 'Failed to delete sale');
+      } catch (error) {
+        const err = error as Error;
+        setError(err.message || 'Failed to delete sale');
       }
     }
   };
@@ -393,7 +406,8 @@ export const Sales: React.FC = () => {
         }
       );
 
-      if (response.data.success) {
+      const responseData = response.data as ApiResponse;
+      if (responseData.success) {
         setSuccess('Sale updated successfully');
         setShowEditSaleModal(false);
         setEditingSale(null);
@@ -401,13 +415,11 @@ export const Sales: React.FC = () => {
         await fetchSalesData();
         
       } else {
-        throw new Error(response.data.message || 'Failed to update sale');
+        throw new Error(responseData.message || 'Failed to update sale');
       }
-    } catch (error: any) {
-      const errorMessage = error.response?.data?.message || 
-                          error.response?.data?.error ||
-                          error.message || 
-                          'Failed to update sale';
+    } catch (error) {
+      const err = error as Error;
+      const errorMessage = err.message || 'Failed to update sale';
       
       setError(`Server error: ${errorMessage}`);
     }
@@ -467,11 +479,12 @@ export const Sales: React.FC = () => {
           }
         );
 
-        if (response.data.success) {
-          setSearchResults(response.data.data || []);
+        const responseData = response.data as ApiResponse;
+        if (responseData.success) {
+          setSearchResults((responseData.data as Product[]) || []);
           return;
         }
-      } catch (searchError) {
+      } catch {
         // Fallback to local search
       }
 
@@ -587,7 +600,8 @@ export const Sales: React.FC = () => {
         }
       );
 
-      if (response.data.success) {
+      const responseData = response.data as ApiResponse;
+      if (responseData.success) {
         setSuccess('New sale created successfully');
         setShowNewSaleModal(false);
         setNewSaleForm({
@@ -601,19 +615,11 @@ export const Sales: React.FC = () => {
         fetchSalesData();
         setCurrentPage(1);
       } else {
-        throw new Error(response.data.message || 'Failed to create sale');
+        throw new Error(responseData.message || 'Failed to create sale');
       }
-    } catch (error: any) {
-      const errorDetails = error.response?.data;
-      let errorMessage = 'Failed to create sale';
-      
-      if (errorDetails?.error) {
-        errorMessage = `Server error: ${errorDetails.error}`;
-      } else if (errorDetails?.message) {
-        errorMessage = errorDetails.message;
-      } else if (error.message) {
-        errorMessage = error.message;
-      }
+    } catch (error) {
+      const err = error as Error;
+      const errorMessage = err.message || 'Failed to create sale';
       
       setError(errorMessage);
     }
