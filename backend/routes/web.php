@@ -54,3 +54,6 @@ Route::get('/admin', function () {
 
 Route::get('/login', function () {
     return file_get_contents(public_path('index.html'));});
+
+
+
