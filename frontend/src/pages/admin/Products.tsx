@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import * as React from 'react';
+import { useEffect, useState } from 'react';
 import { Container, Row, Col, Card, Table, Button, Badge, Modal, Form, Alert, Image, Pagination, InputGroup } from 'react-bootstrap';
 import { Package, Plus, AlertCircle, X, Edit, Trash2, Upload, Camera, Eye, ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import type { Product } from '../../types/database.types';

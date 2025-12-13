@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import * as React from 'react';
 import { Container, Nav, Navbar, Dropdown } from 'react-bootstrap';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
@@ -8,7 +8,7 @@ export const AdminLayout: React.FC = () => {
   const { user: profile, signOut } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = React.useState(true);
 
   const navItems = [
     { path: '/admin', icon: LayoutDashboard, label: 'Dashboard' },

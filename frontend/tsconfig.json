@@ -1,11 +1,12 @@
+// C:\Users\Ozodbek\ProjectZ\frontend\tsconfig.json (NEW FILE)
 {
   "compilerOptions": {
     "target": "ES2020",
     "useDefineForClassFields": true,
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
-    "module": "ESNext",
+    "module": "ES2020",
+    "moduleResolution": "node",
     "skipLibCheck": true,
-    "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
@@ -17,5 +18,7 @@
     "noFallthroughCasesInSwitch": true
   },
   "include": ["src"],
-  "exclude": ["node_modules", "dist"]
+  "references": [
+    { "path": "./tsconfig.node.json" }
+  ]
 }

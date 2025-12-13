@@ -1,180 +1,207 @@
 import * as React from 'react';
 import { useEffect, useState } from 'react';
 import { Container, Row, Col, Card, Table, Button, Badge, Modal, Form, Alert, Dropdown } from 'react-bootstrap';
-import { Users, Plus, Eye, Edit, Trash2, Mail, Phone, MapPin, MoreVertical } from 'lucide-react';
-import type { Employee } from '../../types/database.types';
-import { useBusinessCalculations } from '../../hooks/useBusinessCalculations';
+import { Package, Plus, Eye, Edit, Trash2, DollarSign, BarChart, ShoppingCart, MoreVertical } from 'lucide-react';
+
+interface Product {
+  id: number;
+  name: string;
+  description: string;
+  selling_price: string;
+  cost_price: string;
+  stock_quantity: number;
+  reorder_level: number;
+  unit_of_measure: string;
+  is_active: boolean;
+  profit_margin: string;
+  created_at: string;
+  updated_at: string;
+  images?: ProductImage[];
+}
+
+interface ProductImage {
+  id: number;
+  image_path: string;
+  image_name: string;
+  is_primary: boolean;
+}
 
 export const Inventory: React.FC = () => {
-  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [error, setError] = useState<string>('');
   const [success, setSuccess] = useState<string>('');
   const [formErrors, setFormErrors] = useState<{[key: string]: string}>({});
   const [formData, setFormData] = useState({
-    first_name: '',
-    last_name: '',
-    phone: '',
-    position: '',
-    department: '',
-    base_salary: '',
-    hire_date: '',
-    date_of_birth: '',
-    address: '',
-    employment_type: 'full_time',
-    work_hours_per_day: '8',
-    work_shift: 'day',
+    name: '',
+    description: '',
+    selling_price: '',
+    cost_price: '',
+    stock_quantity: '',
+    reorder_level: '10',
+    unit_of_measure: 'pcs',
     is_active: true
   });
 
-  const calculations = useBusinessCalculations();
-
-  const formatCurrency = (amount: number): string => {
+  const formatCurrency = (amount: string | number): string => {
+    const amountNumber = typeof amount === 'string' ? parseFloat(amount) : amount;
+    
+    if (isNaN(amountNumber)) {
+      return '$0.00';
+    }
+    
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(amount);
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    }).format(amountNumber);
+  };
+
+  const calculateProfitMargin = (cost: string | number, selling: string | number): string => {
+    const costNum = typeof cost === 'string' ? parseFloat(cost) : cost;
+    const sellingNum = typeof selling === 'string' ? parseFloat(selling) : selling;
+    
+    if (isNaN(costNum) || isNaN(sellingNum) || costNum === 0) {
+      return '0%';
+    }
+    
+    const margin = ((sellingNum - costNum) / costNum) * 100;
+    return `${margin.toFixed(1)}%`;
   };
 
   const API_BASE_URL = 'http://127.0.0.1:8000';
 
-  const fetchEmployees = async () => {
+  const fetchProducts = async () => {
     try {
       setLoading(true);
       setError('');
       const token = localStorage.getItem('admin_token');
       
       if (!token) {
-        throw new Error('Authentication token not found. Please log in again.');
+        setError('Authentication required. Please log in again.');
+        setLoading(false);
+        return;
       }
 
-      const response = await fetch(`${API_BASE_URL}/api/admin/employees`, {      
+      // Remove credentials: 'include' since it conflicts with wildcard CORS
+      const response = await fetch(`${API_BASE_URL}/api/admin/products`, {      
         method: 'GET',
         headers: {
           'Accept': 'application/json',
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
-        },
-        credentials: 'include'
+        }
+        // credentials: 'include' // Remove this line - it conflicts with CORS wildcard
       });
 
       if (response.status === 401) {
         throw new Error('Authentication failed. Please log in again.');
-      } else if (response.status === 403) {
+      }
+
+      if (response.status === 403) {
         throw new Error('Access denied. Please check your permissions.');
-      } else if (response.status === 404) {
-        throw new Error('Employees endpoint not found (404). Check backend routes.');
-      } else if (!response.ok) {
+      }
+
+      if (!response.ok) {
         throw new Error(`Server error: ${response.status}`);
       }
 
       const result = await response.json();
       
       if (result.success && result.data) {
-        setEmployees(result.data);
+        setProducts(result.data);
       } else if (Array.isArray(result)) {
-        setEmployees(result);
+        setProducts(result);
       } else {
-        setEmployees([]);
+        setProducts([]);
       }
     } catch (error: any) {
-      setError(error.message || 'Failed to load employees');
-      setEmployees([]);
+      // Check for CORS-specific errors
+      if (error.message.includes('Failed to fetch') || error.message.includes('CORS') || error.message.includes('NetworkError')) {
+        setError('Connection error. Please check if the backend server is running and accessible.');
+      } else {
+        setError(error.message || 'Failed to load products');
+      }
+      setProducts([]);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchEmployees();
+    fetchProducts();
   }, []);
 
   const validateForm = () => {
     const errors: {[key: string]: string} = {};
 
-    if (!formData.first_name.trim()) {
-      errors.first_name = 'First name is required';
+    if (!formData.name.trim()) {
+      errors.name = 'Product name is required';
     }
 
-    if (!formData.last_name.trim()) {
-      errors.last_name = 'Last name is required';
+    if (!formData.selling_price || parseFloat(formData.selling_price) <= 0) {
+      errors.selling_price = 'Selling price must be greater than 0';
     }
 
-    if (!formData.position.trim()) {
-      errors.position = 'Position is required';
+    if (!formData.cost_price || parseFloat(formData.cost_price) <= 0) {
+      errors.cost_price = 'Cost price must be greater than 0';
     }
 
-    if (!formData.department.trim()) {
-      errors.department = 'Department is required';
+    const sellingPrice = parseFloat(formData.selling_price);
+    const costPrice = parseFloat(formData.cost_price);
+    
+    if (!isNaN(sellingPrice) && !isNaN(costPrice) && sellingPrice <= costPrice) {
+      errors.selling_price = 'Selling price must be greater than cost price';
     }
 
-    if (!formData.base_salary || Number(formData.base_salary) <= 0) {
-      errors.base_salary = 'Salary must be greater than 0';
+    if (!formData.stock_quantity || parseInt(formData.stock_quantity) < 0) {
+      errors.stock_quantity = 'Stock quantity must be 0 or greater';
     }
 
-    if (!formData.work_hours_per_day || Number(formData.work_hours_per_day) < 1 || Number(formData.work_hours_per_day) > 24) {
-      errors.work_hours_per_day = 'Work hours must be between 1 and 24';
-    }
-
-    if (formData.hire_date && new Date(formData.hire_date) > new Date()) {
-      errors.hire_date = 'Hire date cannot be in the future';
-    }
-
-    if (formData.date_of_birth && new Date(formData.date_of_birth) > new Date()) {
-      errors.date_of_birth = 'Date of birth cannot be in the future';
+    if (!formData.reorder_level || parseInt(formData.reorder_level) < 0) {
+      errors.reorder_level = 'Reorder level must be 0 or greater';
     }
 
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
   };
 
-  const handleViewEmployee = (employee: Employee) => {
-    setSelectedEmployee(employee);
+  const handleViewProduct = (product: Product) => {
+    setSelectedProduct(product);
     setShowViewModal(true);
   };
 
-  const handleEditEmployee = (employee: Employee) => {
-    setSelectedEmployee(employee);
+  const handleEditProduct = (product: Product) => {
+    setSelectedProduct(product);
     setFormData({
-      first_name: employee.first_name || '',
-      last_name: employee.last_name || '',
-      phone: employee.phone || '',
-      position: employee.position || '',
-      department: employee.department || '',
-      base_salary: employee.base_salary?.toString() || '',
-      hire_date: employee.hire_date ? employee.hire_date.split('T')[0] : '',
-      date_of_birth: employee.date_of_birth ? employee.date_of_birth.split('T')[0] : '',
-      address: employee.address || '',
-      employment_type: (employee as any).employment_type || 'full_time',
-      work_hours_per_day: (employee as any).work_hours_per_day?.toString() || '8',
-      work_shift: (employee as any).work_shift || 'day',
-      is_active: employee.is_active ?? true
+      name: product.name || '',
+      description: product.description || '',
+      selling_price: product.selling_price || '',
+      cost_price: product.cost_price || '',
+      stock_quantity: product.stock_quantity?.toString() || '',
+      reorder_level: product.reorder_level?.toString() || '10',
+      unit_of_measure: product.unit_of_measure || 'pcs',
+      is_active: product.is_active ?? true
     });
     setFormErrors({});
     setShowEditModal(true);
   };
 
-  const handleAddEmployee = () => {
-    setSelectedEmployee(null);
+  const handleAddProduct = () => {
+    setSelectedProduct(null);
     setFormData({
-      first_name: '',
-      last_name: '',
-      phone: '',
-      position: '',
-      department: '',
-      base_salary: '',
-      hire_date: '',
-      date_of_birth: '',
-      address: '',
-      employment_type: 'full_time',
-      work_hours_per_day: '8',
-      work_shift: 'day',
+      name: '',
+      description: '',
+      selling_price: '',
+      cost_price: '',
+      stock_quantity: '',
+      reorder_level: '10',
+      unit_of_measure: 'pcs',
       is_active: true
     });
     setFormErrors({});
@@ -202,7 +229,7 @@ export const Inventory: React.FC = () => {
     setSuccess('');
 
     if (!validateForm()) {
-      setError('Please fill in all fields correctly');
+      setError('Please fix the form errors');
       return;
     }
 
@@ -212,52 +239,24 @@ export const Inventory: React.FC = () => {
         throw new Error('Authentication token not found');
       }
 
-      // Prepare the request body with proper null handling
-      const requestBody: any = {
-        first_name: formData.first_name.trim(),
-        last_name: formData.last_name.trim(),
-        position: formData.position.trim(),
-        department: formData.department.trim(),
-        base_salary: parseFloat(formData.base_salary),
-        employment_type: formData.employment_type,
-        work_hours_per_day: parseInt(formData.work_hours_per_day),
-        work_shift: formData.work_shift,
+      const requestBody = {
+        name: formData.name.trim(),
+        description: formData.description.trim(),
+        selling_price: parseFloat(formData.selling_price),
+        cost_price: parseFloat(formData.cost_price),
+        stock_quantity: parseInt(formData.stock_quantity),
+        reorder_level: parseInt(formData.reorder_level),
+        unit_of_measure: formData.unit_of_measure,
         is_active: true
       };
 
-      // Handle nullable fields - only include if they have values
-      if (formData.phone.trim()) {
-        requestBody.phone = formData.phone.trim();
-      } else {
-        requestBody.phone = null;
-      }
-
-      if (formData.hire_date) {
-        requestBody.hire_date = formData.hire_date;
-      } else {
-        requestBody.hire_date = null;
-      }
-
-      if (formData.date_of_birth) {
-        requestBody.date_of_birth = formData.date_of_birth;
-      } else {
-        requestBody.date_of_birth = null;
-      }
-
-      if (formData.address.trim()) {
-        requestBody.address = formData.address.trim();
-      } else {
-        requestBody.address = null;
-      }
-
-      const response = await fetch(`${API_BASE_URL}/api/admin/employees`, {
+      const response = await fetch(`${API_BASE_URL}/api/admin/products`, {
         method: 'POST',
         headers: {
           'Accept': 'application/json',
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        credentials: 'include',
         body: JSON.stringify(requestBody)
       });
 
@@ -270,57 +269,52 @@ export const Inventory: React.FC = () => {
             backendErrors[key] = result.errors[key][0];
           });
           setFormErrors(backendErrors);
-          setError('Please fill out the form correctly');
+          setError('Please fix the form errors');
         } else {
-          throw new Error(result.message || 'Failed to create employee');
+          throw new Error(result.message || 'Failed to create product');
         }
         return;
       }
 
       if (result.success) {
-        setSuccess('Employee created successfully');
+        setSuccess('Product created successfully');
         setShowModal(false);
         
         setFormData({
-          first_name: '',
-          last_name: '',
-          phone: '',
-          position: '',
-          department: '',
-          base_salary: '',
-          hire_date: '',
-          date_of_birth: '',
-          address: '',
-          employment_type: 'full_time',
-          work_hours_per_day: '8',
-          work_shift: 'day',
+          name: '',
+          description: '',
+          selling_price: '',
+          cost_price: '',
+          stock_quantity: '',
+          reorder_level: '10',
+          unit_of_measure: 'pcs',
           is_active: true
         });
         setFormErrors({});
         
-        await fetchEmployees();
+        await fetchProducts();
       } else {
-        throw new Error(result.message || 'Failed to create employee');
+        throw new Error(result.message || 'Failed to create product');
       }
 
     } catch (error: any) {
-      if (error.message.includes('Failed to fetch')) {
-        setError('Could not connect to server. Please check your internet connection.');
+      if (error.message.includes('Failed to fetch') || error.message.includes('CORS')) {
+        setError('Could not connect to server. Please check your internet connection and backend server.');
       } else {
-        setError(error.message || 'Failed to create employee');
+        setError(error.message || 'Failed to create product');
       }
     }
   };
 
-  const handleUpdateEmployee = async (e: React.FormEvent) => {
+  const handleUpdateProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setSuccess('');
 
-    if (!selectedEmployee) return;
+    if (!selectedProduct) return;
 
     if (!validateForm()) {
-      setError('Please fill in all fields correctly');
+      setError('Please fix the form errors');
       return;
     }
 
@@ -330,52 +324,24 @@ export const Inventory: React.FC = () => {
         throw new Error('Authentication token not found');
       }
 
-      // Prepare the request body with proper null handling
-      const requestBody: any = {
-        first_name: formData.first_name.trim(),
-        last_name: formData.last_name.trim(),
-        position: formData.position.trim(),
-        department: formData.department.trim(),
-        base_salary: parseFloat(formData.base_salary),
-        employment_type: formData.employment_type,
-        work_hours_per_day: parseInt(formData.work_hours_per_day),
-        work_shift: formData.work_shift,
+      const requestBody = {
+        name: formData.name.trim(),
+        description: formData.description.trim(),
+        selling_price: parseFloat(formData.selling_price),
+        cost_price: parseFloat(formData.cost_price),
+        stock_quantity: parseInt(formData.stock_quantity),
+        reorder_level: parseInt(formData.reorder_level),
+        unit_of_measure: formData.unit_of_measure,
         is_active: formData.is_active
       };
 
-      // Handle nullable fields - only include if they have values
-      if (formData.phone.trim()) {
-        requestBody.phone = formData.phone.trim();
-      } else {
-        requestBody.phone = null;
-      }
-
-      if (formData.hire_date) {
-        requestBody.hire_date = formData.hire_date;
-      } else {
-        requestBody.hire_date = null;
-      }
-
-      if (formData.date_of_birth) {
-        requestBody.date_of_birth = formData.date_of_birth;
-      } else {
-        requestBody.date_of_birth = null;
-      }
-
-      if (formData.address.trim()) {
-        requestBody.address = formData.address.trim();
-      } else {
-        requestBody.address = null;
-      }
-
-      const response = await fetch(`${API_BASE_URL}/api/admin/employees/${selectedEmployee.id}`, {
+      const response = await fetch(`${API_BASE_URL}/api/admin/products/${selectedProduct.id}`, {
         method: 'PUT',
         headers: {
           'Accept': 'application/json',
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        credentials: 'include',
         body: JSON.stringify(requestBody)
       });
 
@@ -388,88 +354,82 @@ export const Inventory: React.FC = () => {
             backendErrors[key] = result.errors[key][0];
           });
           setFormErrors(backendErrors);
-          setError('Please fill out the form correctly');
+          setError('Please fix the form errors');
         } else {
-          throw new Error(result.message || 'Failed to update employee');
+          throw new Error(result.message || 'Failed to update product');
         }
         return;
       }
 
       if (result.success) {
-        setSuccess('Employee updated successfully');
+        setSuccess('Product updated successfully');
         setShowEditModal(false);
-        setSelectedEmployee(null);
+        setSelectedProduct(null);
         setFormErrors({});
-        await fetchEmployees();
+        await fetchProducts();
       } else {
-        throw new Error(result.message || 'Failed to update employee');
+        throw new Error(result.message || 'Failed to update product');
       }
 
     } catch (error: any) {
-      if (error.message.includes('Failed to fetch')) {
-        setError('Could not connect to server. Please check your internet connection.');
+      if (error.message.includes('Failed to fetch') || error.message.includes('CORS')) {
+        setError('Could not connect to server. Please check your internet connection and backend server.');
       } else {
-        setError(error.message || 'Failed to update employee');
+        setError(error.message || 'Failed to update product');
       }
     }
   };
 
-  const handleDeleteEmployee = async (employeeId: string) => {
-    if (window.confirm('Are you sure you want to delete this employee?')) {
+  const handleDeleteProduct = async (productId: number) => {
+    if (window.confirm('Are you sure you want to delete this product?')) {
       try {
         const token = localStorage.getItem('admin_token');
         if (!token) {
           throw new Error('Authentication token not found');
         }
 
-        const response = await fetch(`${API_BASE_URL}/api/admin/employees/${employeeId}`, {
+        const response = await fetch(`${API_BASE_URL}/api/admin/products/${productId}`, {
           method: 'DELETE',
           headers: {
             'Accept': 'application/json',
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${token}`
-          },
-          credentials: 'include'
+          }
         });
 
         const result = await response.json();
 
         if (!response.ok) {
-          throw new Error(result.message || 'Failed to delete employee');
+          throw new Error(result.message || 'Failed to delete product');
         }
 
         if (result.success) {
-          setSuccess('Employee deleted successfully');
-          await fetchEmployees();
+          setSuccess('Product deleted successfully');
+          await fetchProducts();
         } else {
-          throw new Error(result.message || 'Failed to delete employee');
+          throw new Error(result.message || 'Failed to delete product');
         }
       } catch (error: any) {
-        if (error.message.includes('Failed to fetch')) {
-          setError('Could not connect to server. Please check your internet connection.');
+        if (error.message.includes('Failed to fetch') || error.message.includes('CORS')) {
+          setError('Could not connect to server. Please check your internet connection and backend server.');
         } else {
-          setError(error.message || 'Failed to delete employee');
+          setError(error.message || 'Failed to delete product');
         }
       }
     }
   };
 
-  const totalPayroll = employees.reduce((sum, emp) => sum + Number(emp.base_salary || 0), 0);
-  const activeEmployees = employees.filter(e => e.is_active).length;
+  const totalInventoryValue = products.reduce((sum, product) => {
+    const cost = parseFloat(product.cost_price || '0');
+    const stock = product.stock_quantity || 0;
+    return sum + (cost * stock);
+  }, 0);
 
-  const getWorkShiftBadge = (shift: string) => {
-    const variants: { [key: string]: string } = {
-      day: 'primary',
-      night: 'dark',
-      both: 'warning'
-    };
-    const labels: { [key: string]: string } = {
-      day: 'Day',
-      night: 'Night',
-      both: 'Both'
-    };
-    return <Badge bg={variants[shift] || 'secondary'} className="small">{labels[shift] || shift}</Badge>;
-  };
+  const lowStockProducts = products.filter(product => 
+    product.stock_quantity <= product.reorder_level
+  ).length;
+
+  const activeProducts = products.filter(product => product.is_active).length;
 
   if (loading) {
     return (
@@ -478,22 +438,22 @@ export const Inventory: React.FC = () => {
           <div className="spinner-border text-primary" role="status">
             <span className="visually-hidden">Loading...</span>
           </div>
-          <p className="mt-3 text-muted">Loading employees...</p>
+          <p className="mt-3 text-muted">Loading inventory...</p>
         </div>
       </Container>
     );
   }
 
   return (
-    <Container fluid className="fade-in px-3 py-3">
+    <Container fluid className="px-3 py-3">
       <div className="d-flex justify-content-between align-items-center mb-3">
         <div className="flex-grow-1">
-          <h4 className="fw-bold mb-1">Employee Management</h4>
-          <p className="text-muted small d-none d-sm-block">Manage your employees and their salaries</p>
+          <h4 className="fw-bold mb-1">Inventory Management</h4>
+          <p className="text-muted small d-none d-sm-block">Manage your products and stock levels</p>
         </div>
-        <Button variant="primary" onClick={handleAddEmployee} size="sm">
+        <Button variant="primary" onClick={handleAddProduct} size="sm">
           <Plus size={16} className="me-1" />
-          <span className="d-none d-sm-inline">Add Employee</span>
+          <span className="d-none d-sm-inline">Add Product</span>
           <span className="d-sm-none">Add</span>
         </Button>
       </div>
@@ -509,7 +469,7 @@ export const Inventory: React.FC = () => {
               size="sm" 
               onClick={() => {
                 setError('');
-                fetchEmployees();
+                fetchProducts();
               }}
               className="ms-2"
             >
@@ -530,11 +490,11 @@ export const Inventory: React.FC = () => {
             <Card.Body className="p-3">
               <div className="d-flex justify-content-between align-items-start">
                 <div>
-                  <p className="text-muted mb-1 small fw-semibold">Total Employees</p>
-                  <h4 className="mb-0 fw-bold text-dark">{employees.length}</h4>
+                  <p className="text-muted mb-1 small fw-semibold">Total Products</p>
+                  <h4 className="mb-0 fw-bold text-dark">{products.length}</h4>
                 </div>
                 <div className="bg-primary bg-opacity-10 p-2 rounded">
-                  <Users size={18} className="text-primary" />
+                  <Package size={18} className="text-primary" />
                 </div>
               </div>
             </Card.Body>
@@ -545,11 +505,13 @@ export const Inventory: React.FC = () => {
             <Card.Body className="p-3">
               <div className="d-flex justify-content-between align-items-start">
                 <div>
-                  <p className="text-muted mb-1 small fw-semibold">Active Employees</p>
-                  <h4 className="mb-0 fw-bold text-dark">{activeEmployees}</h4>
+                  <p className="text-muted mb-1 small fw-semibold">Total Value</p>
+                  <h4 className="mb-0 fw-bold text-dark">
+                    {formatCurrency(totalInventoryValue)}
+                  </h4>
                 </div>
                 <div className="bg-success bg-opacity-10 p-2 rounded">
-                  <Users size={18} className="text-success" />
+                  <DollarSign size={18} className="text-success" />
                 </div>
               </div>
             </Card.Body>
@@ -560,13 +522,11 @@ export const Inventory: React.FC = () => {
             <Card.Body className="p-3">
               <div className="d-flex justify-content-between align-items-start">
                 <div>
-                  <p className="text-muted mb-1 small fw-semibold">Monthly Payroll</p>
-                  <h4 className="mb-0 fw-bold text-dark">
-                    {formatCurrency(totalPayroll)}
-                  </h4>
+                  <p className="text-muted mb-1 small fw-semibold">Low Stock</p>
+                  <h4 className="mb-0 fw-bold text-dark">{lowStockProducts}</h4>
                 </div>
                 <div className="bg-warning bg-opacity-10 p-2 rounded">
-                  <Users size={18} className="text-warning" />
+                  <ShoppingCart size={18} className="text-warning" />
                 </div>
               </div>
             </Card.Body>
@@ -577,13 +537,11 @@ export const Inventory: React.FC = () => {
             <Card.Body className="p-3">
               <div className="d-flex justify-content-between align-items-start">
                 <div>
-                  <p className="text-muted mb-1 small fw-semibold">Average Salary</p>
-                  <h4 className="mb-0 fw-bold text-dark">
-                    {formatCurrency(employees.length > 0 ? totalPayroll / employees.length : 0)}
-                  </h4>
+                  <p className="text-muted mb-1 small fw-semibold">Active Products</p>
+                  <h4 className="mb-0 fw-bold text-dark">{activeProducts}</h4>
                 </div>
                 <div className="bg-info bg-opacity-10 p-2 rounded">
-                  <Users size={18} className="text-info" />
+                  <BarChart size={18} className="text-info" />
                 </div>
               </div>
             </Card.Body>
@@ -595,29 +553,29 @@ export const Inventory: React.FC = () => {
         <Card.Header className="bg-white border-0 py-3">
           <div className="d-flex justify-content-between align-items-center">
             <div>
-              <h6 className="mb-0 fw-semibold">All Employees</h6>
-              <small className="text-muted">Showing {employees.length} employees</small>
+              <h6 className="mb-0 fw-semibold">All Products</h6>
+              <small className="text-muted">Showing {products.length} products</small>
             </div>
             <Button 
               variant="outline-primary" 
-              onClick={handleAddEmployee} 
+              onClick={handleAddProduct} 
               size="sm"
               className="d-none d-sm-block"
             >
               <Plus size={14} className="me-1" />
-              Add Employee
+              Add Product
             </Button>
           </div>
         </Card.Header>
         <Card.Body className="p-0">
-          {employees.length === 0 ? (
+          {products.length === 0 ? (
             <div className="text-center py-5 px-3">
-              <Users size={48} className="text-muted mb-3" />
-              <h6 className="text-muted">No employees found</h6>
-              <p className="text-muted small mb-3">Start by adding your first employee</p>
-              <Button variant="primary" onClick={handleAddEmployee} size="sm">
+              <Package size={48} className="text-muted mb-3" />
+              <h6 className="text-muted">No products found</h6>
+              <p className="text-muted small mb-3">Start by adding your first product</p>
+              <Button variant="primary" onClick={handleAddProduct} size="sm">
                 <Plus size={14} className="me-1" />
-                Add Employee
+                Add Product
               </Button>
             </div>
           ) : (
@@ -625,55 +583,76 @@ export const Inventory: React.FC = () => {
               <Table hover className="mb-0">
                 <thead className="bg-light">
                   <tr>
-                    <th className="small fw-semibold">Employee</th>
-                    <th className="small fw-semibold d-none d-md-table-cell">Department</th>
-                    <th className="small fw-semibold d-none d-sm-table-cell">Position</th>
-                    <th className="small fw-semibold d-none d-lg-table-cell">Salary</th>
+                    <th className="small fw-semibold">Product</th>
+                    <th className="small fw-semibold d-none d-md-table-cell">Price</th>
+                    <th className="small fw-semibold d-none d-sm-table-cell">Stock</th>
+                    <th className="small fw-semibold d-none d-lg-table-cell">Margin</th>
                     <th className="small fw-semibold d-none d-xl-table-cell">Status</th>
                     <th className="small fw-semibold text-end">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {employees.map((employee) => (
-                    <tr key={employee.id}>
+                  {products.map((product) => (
+                    <tr key={product.id}>
                       <td>
                         <div className="d-flex align-items-center">
                           <div className="flex-shrink-0">
                             <div className="bg-primary bg-opacity-10 rounded-circle d-flex align-items-center justify-content-center" 
                                  style={{ width: '40px', height: '40px' }}>
-                              <Users size={16} className="text-primary" />
+                              <Package size={16} className="text-primary" />
                             </div>
                           </div>
                           <div className="flex-grow-1 ms-3">
                             <div className="fw-semibold small">
-                              {employee.first_name} {employee.last_name}
+                              {product.name}
                             </div>
                             <div className="text-muted small">
-                              {employee.phone || 'No phone number'}
+                              {product.description && product.description.length > 30 
+                                ? `${product.description.substring(0, 30)}...`
+                                : product.description || 'No description'}
                             </div>
-                            <div className="d-block d-md-none">
-                              <Badge bg="info" className="small me-1">
-                                {employee.work_hours_per_day} hours
+                            <div className="d-block d-md-none mt-1">
+                              <Badge 
+                                bg={product.stock_quantity <= product.reorder_level ? 'warning' : 'success'} 
+                                className="small me-1"
+                              >
+                                Stock: {product.stock_quantity} {product.unit_of_measure}
                               </Badge>
-                              {getWorkShiftBadge(employee.work_shift || 'day')}
+                              <Badge bg="info" className="small">
+                                {formatCurrency(product.selling_price)}
+                              </Badge>
                             </div>
                           </div>
                         </div>
                       </td>
                       <td className="d-none d-md-table-cell">
-                        <span className="small">{employee.department}</span>
+                        <div>
+                          <span className="fw-semibold small text-success">
+                            {formatCurrency(product.selling_price)}
+                          </span>
+                          <div className="text-muted small">
+                            Cost: {formatCurrency(product.cost_price)}
+                          </div>
+                        </div>
                       </td>
                       <td className="d-none d-sm-table-cell">
-                        <span className="small">{employee.position}</span>
+                        <div>
+                          <span className={`fw-semibold small ${product.stock_quantity <= product.reorder_level ? 'text-warning' : 'text-dark'}`}>
+                            {product.stock_quantity} {product.unit_of_measure}
+                          </span>
+                          <div className="text-muted small">
+                            Reorder at: {product.reorder_level}
+                          </div>
+                        </div>
                       </td>
                       <td className="d-none d-lg-table-cell">
-                        <span className="fw-semibold small text-success">
-                          {formatCurrency(Number(employee.base_salary || 0))}
-                        </span>
+                        <Badge bg="success" className="small">
+                          {calculateProfitMargin(product.cost_price, product.selling_price)}
+                        </Badge>
                       </td>
                       <td className="d-none d-xl-table-cell">
-                        <Badge bg={employee.is_active ? 'success' : 'danger'} className="small">
-                          {employee.is_active ? 'Active' : 'Inactive'}
+                        <Badge bg={product.is_active ? 'success' : 'danger'} className="small">
+                          {product.is_active ? 'Active' : 'Inactive'}
                         </Badge>
                       </td>
                       <td>
@@ -683,17 +662,17 @@ export const Inventory: React.FC = () => {
                               <MoreVertical size={14} />
                             </Dropdown.Toggle>
                             <Dropdown.Menu align="end">
-                              <Dropdown.Item onClick={() => handleViewEmployee(employee)}>
+                              <Dropdown.Item onClick={() => handleViewProduct(product)}>
                                 <Eye size={14} className="me-2" />
                                 View
                               </Dropdown.Item>
-                              <Dropdown.Item onClick={() => handleEditEmployee(employee)}>
+                              <Dropdown.Item onClick={() => handleEditProduct(product)}>
                                 <Edit size={14} className="me-2" />
                                 Edit
                               </Dropdown.Item>
                               <Dropdown.Divider />
                               <Dropdown.Item 
-                                onClick={() => handleDeleteEmployee(employee.id)}
+                                onClick={() => handleDeleteProduct(product.id)}
                                 className="text-danger"
                               >
                                 <Trash2 size={14} className="me-2" />
@@ -706,24 +685,24 @@ export const Inventory: React.FC = () => {
                             <Button 
                               variant="outline-primary" 
                               size="sm"
-                              onClick={() => handleViewEmployee(employee)}
-                              title="View employee details"
+                              onClick={() => handleViewProduct(product)}
+                              title="View product details"
                             >
                               <Eye size={14} />
                             </Button>
                             <Button 
                               variant="outline-warning" 
                               size="sm"
-                              onClick={() => handleEditEmployee(employee)}
-                              title="Edit employee"
+                              onClick={() => handleEditProduct(product)}
+                              title="Edit product"
                             >
                               <Edit size={14} />
                             </Button>
                             <Button 
                               variant="outline-danger" 
                               size="sm"
-                              onClick={() => handleDeleteEmployee(employee.id)}
-                              title="Delete employee"
+                              onClick={() => handleDeleteProduct(product.id)}
+                              title="Delete product"
                             >
                               <Trash2 size={14} />
                             </Button>
@@ -739,61 +718,45 @@ export const Inventory: React.FC = () => {
         </Card.Body>
       </Card>
 
+      {/* Add Product Modal */}
       <Modal show={showModal} onHide={() => setShowModal(false)} size="lg" centered>
         <Modal.Header closeButton className="px-3 py-2">
-          <Modal.Title className="h6 mb-0">Add New Employee</Modal.Title>
+          <Modal.Title className="h6 mb-0">Add New Product</Modal.Title>
         </Modal.Header>
         <Form onSubmit={handleSubmit}>
           <Modal.Body className="p-3">
             <Row className="g-2">
-              <Col xs={12} sm={6}>
+              <Col xs={12}>
                 <Form.Group className="mb-2">
-                  <Form.Label className="small fw-semibold">First Name *</Form.Label>
+                  <Form.Label className="small fw-semibold">Product Name *</Form.Label>
                   <Form.Control
                     type="text"
-                    name="first_name"
-                    value={formData.first_name}
+                    name="name"
+                    value={formData.name}
                     onChange={handleInputChange}
                     required
-                    placeholder="Enter first name"
+                    placeholder="Enter product name"
                     size="sm"
-                    isInvalid={!!formErrors.first_name}
+                    isInvalid={!!formErrors.name}
                   />
                   <Form.Control.Feedback type="invalid">
-                    {formErrors.first_name}
-                  </Form.Control.Feedback>
-                </Form.Group>
-              </Col>
-              <Col xs={12} sm={6}>
-                <Form.Group className="mb-2">
-                  <Form.Label className="small fw-semibold">Last Name *</Form.Label>
-                  <Form.Control
-                    type="text"
-                    name="last_name"
-                    value={formData.last_name}
-                    onChange={handleInputChange}
-                    required
-                    placeholder="Enter last name"
-                    size="sm"
-                    isInvalid={!!formErrors.last_name}
-                  />
-                  <Form.Control.Feedback type="invalid">
-                    {formErrors.last_name}
+                    {formErrors.name}
                   </Form.Control.Feedback>
                 </Form.Group>
               </Col>
             </Row>
 
             <Row className="g-2">
-              <Col xs={12} sm={6}>
+              <Col xs={12}>
                 <Form.Group className="mb-2">
-                  <Form.Label className="small fw-semibold">Phone</Form.Label>
+                  <Form.Label className="small fw-semibold">Description</Form.Label>
                   <Form.Control
-                    type="tel"
-                    name="phone"
-                    value={formData.phone}
+                    as="textarea"
+                    rows={2}
+                    name="description"
+                    value={formData.description}
                     onChange={handleInputChange}
-                    placeholder="Enter phone number (optional)"
+                    placeholder="Enter product description"
                     size="sm"
                   />
                 </Form.Group>
@@ -803,133 +766,83 @@ export const Inventory: React.FC = () => {
             <Row className="g-2">
               <Col xs={12} sm={6}>
                 <Form.Group className="mb-2">
-                  <Form.Label className="small fw-semibold">Position *</Form.Label>
-                  <Form.Control
-                    type="text"
-                    name="position"
-                    value={formData.position}
-                    onChange={handleInputChange}
-                    required
-                    placeholder="Enter position"
-                    size="sm"
-                    isInvalid={!!formErrors.position}
-                  />
-                  <Form.Control.Feedback type="invalid">
-                    {formErrors.position}
-                  </Form.Control.Feedback>
-                </Form.Group>
-              </Col>
-              <Col xs={12} sm={6}>
-                <Form.Group className="mb-2">
-                  <Form.Label className="small fw-semibold">Department *</Form.Label>
-                  <Form.Control
-                    type="text"
-                    name="department"
-                    value={formData.department}
-                    onChange={handleInputChange}
-                    required
-                    placeholder="Enter department"
-                    size="sm"
-                    isInvalid={!!formErrors.department}
-                  />
-                  <Form.Control.Feedback type="invalid">
-                    {formErrors.department}
-                  </Form.Control.Feedback>
-                </Form.Group>
-              </Col>
-            </Row>
-
-            <Row className="g-2">
-              <Col xs={12} sm={6}>
-                <Form.Group className="mb-2">
-                  <Form.Label className="small fw-semibold">Base Salary ($) *</Form.Label>
+                  <Form.Label className="small fw-semibold">Cost Price ($) *</Form.Label>
                   <Form.Control
                     type="number"
-                    name="base_salary"
-                    value={formData.base_salary}
+                    name="cost_price"
+                    value={formData.cost_price}
+                    onChange={handleInputChange}
+                    required
+                    placeholder="0.00"
+                    step="0.01"
+                    min="0.01"
+                    size="sm"
+                    isInvalid={!!formErrors.cost_price}
+                  />
+                  <Form.Control.Feedback type="invalid">
+                    {formErrors.cost_price}
+                  </Form.Control.Feedback>
+                </Form.Group>
+              </Col>
+              <Col xs={12} sm={6}>
+                <Form.Group className="mb-2">
+                  <Form.Label className="small fw-semibold">Selling Price ($) *</Form.Label>
+                  <Form.Control
+                    type="number"
+                    name="selling_price"
+                    value={formData.selling_price}
+                    onChange={handleInputChange}
+                    required
+                    placeholder="0.00"
+                    step="0.01"
+                    min="0.01"
+                    size="sm"
+                    isInvalid={!!formErrors.selling_price}
+                  />
+                  <Form.Control.Feedback type="invalid">
+                    {formErrors.selling_price}
+                  </Form.Control.Feedback>
+                </Form.Group>
+              </Col>
+            </Row>
+
+            <Row className="g-2">
+              <Col xs={12} sm={6}>
+                <Form.Group className="mb-2">
+                  <Form.Label className="small fw-semibold">Stock Quantity *</Form.Label>
+                  <Form.Control
+                    type="number"
+                    name="stock_quantity"
+                    value={formData.stock_quantity}
                     onChange={handleInputChange}
                     required
                     placeholder="0"
                     step="1"
                     min="0"
                     size="sm"
-                    isInvalid={!!formErrors.base_salary}
+                    isInvalid={!!formErrors.stock_quantity}
                   />
                   <Form.Control.Feedback type="invalid">
-                    {formErrors.base_salary}
+                    {formErrors.stock_quantity}
                   </Form.Control.Feedback>
-                  <Form.Text className="text-muted">
-                    Monthly salary in USD
-                  </Form.Text>
                 </Form.Group>
               </Col>
-              <Col xs={6} sm={3}>
+              <Col xs={12} sm={6}>
                 <Form.Group className="mb-2">
-                  <Form.Label className="small fw-semibold">Work Hours *</Form.Label>
+                  <Form.Label className="small fw-semibold">Reorder Level</Form.Label>
                   <Form.Control
                     type="number"
-                    name="work_hours_per_day"
-                    value={formData.work_hours_per_day}
+                    name="reorder_level"
+                    value={formData.reorder_level}
                     onChange={handleInputChange}
-                    required
-                    min="1"
-                    max="24"
-                    placeholder="8"
+                    placeholder="10"
+                    step="1"
+                    min="0"
                     size="sm"
-                    isInvalid={!!formErrors.work_hours_per_day}
+                    isInvalid={!!formErrors.reorder_level}
                   />
                   <Form.Control.Feedback type="invalid">
-                    {formErrors.work_hours_per_day}
-                  </Form.Control.Feedback>
-                </Form.Group>
-              </Col>
-              <Col xs={6} sm={3}>
-                <Form.Group className="mb-2">
-                  <Form.Label className="small fw-semibold">Work Shift</Form.Label>
-                  <Form.Select
-                    name="work_shift"
-                    value={formData.work_shift}
-                    onChange={handleInputChange}
-                    size="sm"
-                  >
-                    <option value="day">Day</option>
-                    <option value="night">Night</option>
-                    <option value="both">Both</option>
-                  </Form.Select>
-                </Form.Group>
-              </Col>
-            </Row>
-
-            <Row className="g-2">
-              <Col xs={12} sm={6}>
-                <Form.Group className="mb-2">
-                  <Form.Label className="small fw-semibold">Employment Type</Form.Label>
-                  <Form.Select
-                    name="employment_type"
-                    value={formData.employment_type}
-                    onChange={handleInputChange}
-                    size="sm"
-                  >
-                    <option value="full_time">Full Time</option>
-                    <option value="part_time">Part Time</option>
-                    <option value="contract">Contract</option>
-                    <option value="temporary">Temporary</option>
-                  </Form.Select>
-                </Form.Group>
-              </Col>
-              <Col xs={12} sm={6}>
-                <Form.Group className="mb-2">
-                  <Form.Label className="small fw-semibold">Hire Date</Form.Label>
-                  <Form.Control
-                    type="date"
-                    name="hire_date"
-                    value={formData.hire_date}
-                    onChange={handleInputChange}
-                    size="sm"
-                    isInvalid={!!formErrors.hire_date}
-                  />
-                  <Form.Control.Feedback type="invalid">
-                    {formErrors.hire_date}
+                    {formErrors.reorder_level}
                   </Form.Control.Feedback>
                 </Form.Group>
               </Col>
@@ -938,101 +851,77 @@ export const Inventory: React.FC = () => {
             <Row className="g-2">
               <Col xs={12} sm={6}>
                 <Form.Group className="mb-2">
-                  <Form.Label className="small fw-semibold">Date of Birth</Form.Label>
-                  <Form.Control
-                    type="date"
-                    name="date_of_birth"
-                    value={formData.date_of_birth}
+                  <Form.Label className="small fw-semibold">Unit of Measure</Form.Label>
+                  <Form.Select
+                    name="unit_of_measure"
+                    value={formData.unit_of_measure}
                     onChange={handleInputChange}
                     size="sm"
-                    isInvalid={!!formErrors.date_of_birth}
-                  />
-                  <Form.Control.Feedback type="invalid">
-                    {formErrors.date_of_birth}
-                  </Form.Control.Feedback>
+                  >
+                    <option value="pcs">Pieces (pcs)</option>
+                    <option value="kg">Kilograms (kg)</option>
+                    <option value="g">Grams (g)</option>
+                    <option value="L">Liters (L)</option>
+                    <option value="mL">Milliliters (mL)</option>
+                    <option value="box">Box</option>
+                    <option value="pack">Pack</option>
+                    <option value="set">Set</option>
+                    <option value="pair">Pair</option>
+                  </Form.Select>
                 </Form.Group>
               </Col>
             </Row>
-
-            <Form.Group className="mb-2">
-              <Form.Label className="small fw-semibold">Address</Form.Label>
-              <Form.Control
-                as="textarea"
-                rows={2}
-                name="address"
-                value={formData.address}
-                onChange={handleInputChange}
-                placeholder="Enter address (optional)"
-                size="sm"
-              />
-            </Form.Group>
           </Modal.Body>
           <Modal.Footer className="px-3 py-2">
             <Button variant="secondary" onClick={() => setShowModal(false)} size="sm">
               Cancel
             </Button>
             <Button variant="primary" type="submit" size="sm">
-              Add Employee
+              Add Product
             </Button>
           </Modal.Footer>
         </Form>
       </Modal>
 
+      {/* Edit Product Modal */}
       <Modal show={showEditModal} onHide={() => setShowEditModal(false)} size="lg" centered>
         <Modal.Header closeButton className="px-3 py-2">
-          <Modal.Title className="h6 mb-0">Edit Employee</Modal.Title>
+          <Modal.Title className="h6 mb-0">Edit Product</Modal.Title>
         </Modal.Header>
-        <Form onSubmit={handleUpdateEmployee}>
+        <Form onSubmit={handleUpdateProduct}>
           <Modal.Body className="p-3">
             <Row className="g-2">
-              <Col xs={12} sm={6}>
+              <Col xs={12}>
                 <Form.Group className="mb-2">
-                  <Form.Label className="small fw-semibold">First Name *</Form.Label>
+                  <Form.Label className="small fw-semibold">Product Name *</Form.Label>
                   <Form.Control
                     type="text"
-                    name="first_name"
-                    value={formData.first_name}
+                    name="name"
+                    value={formData.name}
                     onChange={handleInputChange}
                     required
-                    placeholder="Enter first name"
+                    placeholder="Enter product name"
                     size="sm"
-                    isInvalid={!!formErrors.first_name}
+                    isInvalid={!!formErrors.name}
                   />
                   <Form.Control.Feedback type="invalid">
-                    {formErrors.first_name}
-                  </Form.Control.Feedback>
-                </Form.Group>
-              </Col>
-              <Col xs={12} sm={6}>
-                <Form.Group className="mb-2">
-                  <Form.Label className="small fw-semibold">Last Name *</Form.Label>
-                  <Form.Control
-                    type="text"
-                    name="last_name"
-                    value={formData.last_name}
-                    onChange={handleInputChange}
-                    required
-                    placeholder="Enter last name"
-                    size="sm"
-                    isInvalid={!!formErrors.last_name}
-                  />
-                  <Form.Control.Feedback type="invalid">
-                    {formErrors.last_name}
+                    {formErrors.name}
                   </Form.Control.Feedback>
                 </Form.Group>
               </Col>
             </Row>
 
             <Row className="g-2">
-              <Col xs={12} sm={6}>
+              <Col xs={12}>
                 <Form.Group className="mb-2">
-                  <Form.Label className="small fw-semibold">Phone</Form.Label>
+                  <Form.Label className="small fw-semibold">Description</Form.Label>
                   <Form.Control
-                    type="tel"
-                    name="phone"
-                    value={formData.phone}
+                    as="textarea"
+                    rows={2}
+                    name="description"
+                    value={formData.description}
                     onChange={handleInputChange}
-                    placeholder="Enter phone number (optional)"
+                    placeholder="Enter product description"
                     size="sm"
                   />
                 </Form.Group>
@@ -1042,133 +931,83 @@ export const Inventory: React.FC = () => {
             <Row className="g-2">
               <Col xs={12} sm={6}>
                 <Form.Group className="mb-2">
-                  <Form.Label className="small fw-semibold">Position *</Form.Label>
-                  <Form.Control
-                    type="text"
-                    name="position"
-                    value={formData.position}
-                    onChange={handleInputChange}
-                    required
-                    placeholder="Enter position"
-                    size="sm"
-                    isInvalid={!!formErrors.position}
-                  />
-                  <Form.Control.Feedback type="invalid">
-                    {formErrors.position}
-                  </Form.Control.Feedback>
-                </Form.Group>
-              </Col>
-              <Col xs={12} sm={6}>
-                <Form.Group className="mb-2">
-                  <Form.Label className="small fw-semibold">Department *</Form.Label>
-                  <Form.Control
-                    type="text"
-                    name="department"
-                    value={formData.department}
-                    onChange={handleInputChange}
-                    required
-                    placeholder="Enter department"
-                    size="sm"
-                    isInvalid={!!formErrors.department}
-                  />
-                  <Form.Control.Feedback type="invalid">
-                    {formErrors.department}
-                  </Form.Control.Feedback>
-                </Form.Group>
-              </Col>
-            </Row>
-
-            <Row className="g-2">
-              <Col xs={12} sm={6}>
-                <Form.Group className="mb-2">
-                  <Form.Label className="small fw-semibold">Base Salary ($) *</Form.Label>
+                  <Form.Label className="small fw-semibold">Cost Price ($) *</Form.Label>
                   <Form.Control
                     type="number"
-                    name="base_salary"
-                    value={formData.base_salary}
+                    name="cost_price"
+                    value={formData.cost_price}
+                    onChange={handleInputChange}
+                    required
+                    placeholder="0.00"
+                    step="0.01"
+                    min="0.01"
+                    size="sm"
+                    isInvalid={!!formErrors.cost_price}
+                  />
+                  <Form.Control.Feedback type="invalid">
+                    {formErrors.cost_price}
+                  </Form.Control.Feedback>
+                </Form.Group>
+              </Col>
+              <Col xs={12} sm={6}>
+                <Form.Group className="mb-2">
+                  <Form.Label className="small fw-semibold">Selling Price ($) *</Form.Label>
+                  <Form.Control
+                    type="number"
+                    name="selling_price"
+                    value={formData.selling_price}
+                    onChange={handleInputChange}
+                    required
+                    placeholder="0.00"
+                    step="0.01"
+                    min="0.01"
+                    size="sm"
+                    isInvalid={!!formErrors.selling_price}
+                  />
+                  <Form.Control.Feedback type="invalid">
+                    {formErrors.selling_price}
+                  </Form.Control.Feedback>
+                </Form.Group>
+              </Col>
+            </Row>
+
+            <Row className="g-2">
+              <Col xs={12} sm={6}>
+                <Form.Group className="mb-2">
+                  <Form.Label className="small fw-semibold">Stock Quantity *</Form.Label>
+                  <Form.Control
+                    type="number"
+                    name="stock_quantity"
+                    value={formData.stock_quantity}
                     onChange={handleInputChange}
                     required
                     placeholder="0"
                     step="1"
                     min="0"
                     size="sm"
-                    isInvalid={!!formErrors.base_salary}
+                    isInvalid={!!formErrors.stock_quantity}
                   />
                   <Form.Control.Feedback type="invalid">
-                    {formErrors.base_salary}
+                    {formErrors.stock_quantity}
                   </Form.Control.Feedback>
-                  <Form.Text className="text-muted">
-                    Monthly salary in USD
-                  </Form.Text>
                 </Form.Group>
               </Col>
-              <Col xs={6} sm={3}>
+              <Col xs={12} sm={6}>
                 <Form.Group className="mb-2">
-                  <Form.Label className="small fw-semibold">Work Hours *</Form.Label>
+                  <Form.Label className="small fw-semibold">Reorder Level</Form.Label>
                   <Form.Control
                     type="number"
-                    name="work_hours_per_day"
-                    value={formData.work_hours_per_day}
+                    name="reorder_level"
+                    value={formData.reorder_level}
                     onChange={handleInputChange}
-                    required
-                    min="1"
-                    max="24"
-                    placeholder="8"
+                    placeholder="10"
+                    step="1"
+                    min="0"
                     size="sm"
-                    isInvalid={!!formErrors.work_hours_per_day}
+                    isInvalid={!!formErrors.reorder_level}
                   />
                   <Form.Control.Feedback type="invalid">
-                    {formErrors.work_hours_per_day}
-                  </Form.Control.Feedback>
-                </Form.Group>
-              </Col>
-              <Col xs={6} sm={3}>
-                <Form.Group className="mb-2">
-                  <Form.Label className="small fw-semibold">Work Shift</Form.Label>
-                  <Form.Select
-                    name="work_shift"
-                    value={formData.work_shift}
-                    onChange={handleInputChange}
-                    size="sm"
-                  >
-                    <option value="day">Day</option>
-                    <option value="night">Night</option>
-                    <option value="both">Both</option>
-                  </Form.Select>
-                </Form.Group>
-              </Col>
-            </Row>
-
-            <Row className="g-2">
-              <Col xs={12} sm={6}>
-                <Form.Group className="mb-2">
-                  <Form.Label className="small fw-semibold">Employment Type</Form.Label>
-                  <Form.Select
-                    name="employment_type"
-                    value={formData.employment_type}
-                    onChange={handleInputChange}
-                    size="sm"
-                  >
-                    <option value="full_time">Full Time</option>
-                    <option value="part_time">Part Time</option>
-                    <option value="contract">Contract</option>
-                    <option value="temporary">Temporary</option>
-                  </Form.Select>
-                </Form.Group>
-              </Col>
-              <Col xs={12} sm={6}>
-                <Form.Group className="mb-2">
-                  <Form.Label className="small fw-semibold">Hire Date</Form.Label>
-                  <Form.Control
-                    type="date"
-                    name="hire_date"
-                    value={formData.hire_date}
-                    onChange={handleInputChange}
-                    size="sm"
-                    isInvalid={!!formErrors.hire_date}
-                  />
-                  <Form.Control.Feedback type="invalid">
-                    {formErrors.hire_date}
+                    {formErrors.reorder_level}
                   </Form.Control.Feedback>
                 </Form.Group>
               </Col>
@@ -1177,18 +1016,23 @@ export const Inventory: React.FC = () => {
             <Row className="g-2">
               <Col xs={12} sm={6}>
                 <Form.Group className="mb-2">
-                  <Form.Label className="small fw-semibold">Date of Birth</Form.Label>
-                  <Form.Control
-                    type="date"
-                    name="date_of_birth"
-                    value={formData.date_of_birth}
+                  <Form.Label className="small fw-semibold">Unit of Measure</Form.Label>
+                  <Form.Select
+                    name="unit_of_measure"
+                    value={formData.unit_of_measure}
                     onChange={handleInputChange}
                     size="sm"
-                    isInvalid={!!formErrors.date_of_birth}
-                  />
-                  <Form.Control.Feedback type="invalid">
-                    {formErrors.date_of_birth}
-                  </Form.Control.Feedback>
+                  >
+                    <option value="pcs">Pieces (pcs)</option>
+                    <option value="kg">Kilograms (kg)</option>
+                    <option value="g">Grams (g)</option>
+                    <option value="L">Liters (L)</option>
+                    <option value="mL">Milliliters (mL)</option>
+                    <option value="box">Box</option>
+                    <option value="pack">Pack</option>
+                    <option value="set">Set</option>
+                    <option value="pair">Pair</option>
+                  </Form.Select>
                 </Form.Group>
               </Col>
               <Col xs={12} sm={6}>
@@ -1206,19 +1050,6 @@ export const Inventory: React.FC = () => {
                 </Form.Group>
               </Col>
             </Row>
-
-            <Form.Group className="mb-2">
-              <Form.Label className="small fw-semibold">Address</Form.Label>
-              <Form.Control
-                as="textarea"
-                rows={2}
-                name="address"
-                value={formData.address}
-                onChange={handleInputChange}
-                placeholder="Enter address (optional)"
-                size="sm"
-              />
-            </Form.Group>
           </Modal.Body>
           <Modal.Footer className="px-3 py-2">
             <Button variant="secondary" onClick={() => setShowEditModal(false)} size="sm">
@@ -1231,82 +1062,74 @@ export const Inventory: React.FC = () => {
         </Form>
       </Modal>
 
+      {/* View Product Modal */}
       <Modal show={showViewModal} onHide={() => setShowViewModal(false)} size="lg" centered>
         <Modal.Header closeButton className="px-3 py-2">
-          <Modal.Title className="h6 mb-0">Employee Details</Modal.Title>
+          <Modal.Title className="h6 mb-0">Product Details</Modal.Title>
         </Modal.Header>
         <Modal.Body className="p-3">
-          {selectedEmployee && (
+          {selectedProduct && (
             <>
               <Row className="mb-3">
                 <Col xs={8}>
-                  <h6 className="fw-bold mb-2">
-                    {selectedEmployee.first_name} {selectedEmployee.last_name}
-                  </h6>
-                  {selectedEmployee.phone && (
-                    <p className="text-muted small mb-1">
-                      <Phone size={14} className="me-2" />
-                      {selectedEmployee.phone}
-                    </p>
-                  )}
-                  {selectedEmployee.address && (
-                    <p className="text-muted small mb-0">
-                      <MapPin size={14} className="me-2" />
-                      {selectedEmployee.address}
-                    </p>
-                  )}
+                  <h6 className="fw-bold mb-2">{selectedProduct.name}</h6>
+                  <p className="text-muted small mb-0">
+                    {selectedProduct.description || 'No description available'}
+                  </p>
                 </Col>
                 <Col xs={4} className="text-end">
-                  <Badge bg={selectedEmployee.is_active ? 'success' : 'danger'} className="small mb-2">
-                    {selectedEmployee.is_active ? 'Active' : 'Inactive'}
+                  <Badge bg={selectedProduct.is_active ? 'success' : 'danger'} className="small mb-2">
+                    {selectedProduct.is_active ? 'Active' : 'Inactive'}
                   </Badge>
                   <div>
                     <small className="text-muted">ID:</small>
-                    <div className="fw-bold small">{selectedEmployee.employee_code}</div>
+                    <div className="fw-bold small">{selectedProduct.id}</div>
                   </div>
                 </Col>
               </Row>
 
               <Row>
                 <Col xs={12} sm={6}>
-                  <h6 className="text-muted small mb-2">Work Details</h6>
+                  <h6 className="text-muted small mb-2">Pricing Information</h6>
                   <div className="mb-2">
-                    <strong className="small">Position:</strong>
-                    <div className="small">{selectedEmployee.position}</div>
-                  </div>
-                  <div className="mb-2">
-                    <strong className="small">Department:</strong>
-                    <div className="small">{selectedEmployee.department}</div>
-                  </div>
-                  <div className="mb-2">
-                    <strong className="small">Work Hours:</strong>
-                    <div className="small"><Badge bg="info" className="small">{(selectedEmployee as any).work_hours_per_day} hours</Badge></div>
-                  </div>
-                  <div className="mb-2">
-                    <strong className="small">Work Shift:</strong>
-                    <div className="small">{getWorkShiftBadge((selectedEmployee as any).work_shift)}</div>
-                  </div>
-                  <div className="mb-2">
-                    <strong className="small">Base Salary:</strong>
+                    <strong className="small">Selling Price:</strong>
                     <div className="fw-semibold small text-success">
-                      {formatCurrency(Number(selectedEmployee.base_salary || 0))}
+                      {formatCurrency(selectedProduct.selling_price)}
                     </div>
                   </div>
-                  {selectedEmployee.hire_date && (
-                    <div className="mb-2">
-                      <strong className="small">Hire Date:</strong>
-                      <div className="small">{new Date(selectedEmployee.hire_date).toLocaleDateString()}</div>
+                  <div className="mb-2">
+                    <strong className="small">Cost Price:</strong>
+                    <div className="fw-semibold small text-danger">
+                      {formatCurrency(selectedProduct.cost_price)}
                     </div>
-                  )}
+                  </div>
+                  <div className="mb-2">
+                    <strong className="small">Profit Margin:</strong>
+                    <div className="fw-semibold small">
+                      <Badge bg="success" className="small">
+                        {calculateProfitMargin(selectedProduct.cost_price, selectedProduct.selling_price)}
+                      </Badge>
+                    </div>
+                  </div>
                 </Col>
                 <Col xs={12} sm={6}>
-                  <h6 className="text-muted small mb-2">Personal Information</h6>
-                  {selectedEmployee.date_of_birth && (
-                    <div className="mb-2">
-                      <strong className="small">Date of Birth:</strong>
-                      <div className="small">{new Date(selectedEmployee.date_of_birth).toLocaleDateString()}</div>
+                  <h6 className="text-muted small mb-2">Stock Information</h6>
+                  <div className="mb-2">
+                    <strong className="small">Current Stock:</strong>
+                    <div className={`fw-semibold small ${selectedProduct.stock_quantity <= selectedProduct.reorder_level ? 'text-warning' : 'text-dark'}`}>
+                      {selectedProduct.stock_quantity} {selectedProduct.unit_of_measure}
                     </div>
-                  )}
+                  </div>
+                  <div className="mb-2">
+                    <strong className="small">Reorder Level:</strong>
+                    <div className="fw-semibold small">
+                      {selectedProduct.reorder_level} {selectedProduct.unit_of_measure}
+                    </div>
+                  </div>
+                  <div className="mb-2">
+                    <strong className="small">Unit of Measure:</strong>
+                    <div className="fw-semibold small">{selectedProduct.unit_of_measure}</div>
+                  </div>
                 </Col>
               </Row>
             </>
